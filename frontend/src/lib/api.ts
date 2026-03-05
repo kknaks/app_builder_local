@@ -136,28 +136,59 @@ export function cancelTask(projectId: string, taskId: string): Promise<{ ok: boo
 }
 
 // ─── App Run/Stop ─────────────────────────────────────────
+export interface ContainerInfo {
+  name: string;
+  service: string;
+  state: string;
+  status: string;
+  ports: string;
+}
+
+export interface RunResponse {
+  status: string;
+  urls: Record<string, string>;
+  containers: ContainerInfo[];
+  message: string;
+  error?: string | null;
+}
+
+export interface StopResponse {
+  status: string;
+  message: string;
+  error?: string | null;
+}
+
+export interface RunStatusResponse {
+  status: string;
+  urls: Record<string, string>;
+  containers: ContainerInfo[];
+  error?: string | null;
+}
+
+/** Unified frontend run status (derived from API responses) */
+export type RunStatusState = "idle" | "starting" | "running" | "stopping" | "stopped" | "error";
+
 export interface RunStatus {
-  status: "idle" | "starting" | "running" | "stopping" | "stopped" | "error";
-  url?: string;
-  port?: number;
+  status: RunStatusState;
+  urls?: Record<string, string>;
+  containers?: ContainerInfo[];
   error?: string;
-  container_id?: string;
 }
 
-export function runProject(projectId: string): Promise<{ ok: boolean; url?: string }> {
-  return apiFetch<{ ok: boolean; url?: string }>(`/api/projects/${projectId}/run`, {
+export function runProject(projectId: string): Promise<RunResponse> {
+  return apiFetch<RunResponse>(`/api/projects/${projectId}/run`, {
     method: "POST",
   });
 }
 
-export function stopProject(projectId: string): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(`/api/projects/${projectId}/stop`, {
+export function stopProject(projectId: string): Promise<StopResponse> {
+  return apiFetch<StopResponse>(`/api/projects/${projectId}/stop`, {
     method: "POST",
   });
 }
 
-export function getRunStatus(projectId: string): Promise<RunStatus> {
-  return apiFetch<RunStatus>(`/api/projects/${projectId}/run/status`);
+export function getRunStatus(projectId: string): Promise<RunStatusResponse> {
+  return apiFetch<RunStatusResponse>(`/api/projects/${projectId}/run/status`);
 }
 
 // ─── Flow Nodes ───────────────────────────────────────────

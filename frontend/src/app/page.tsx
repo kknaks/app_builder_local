@@ -11,6 +11,7 @@ import DashboardPanel from "@/components/DashboardPanel";
 import ChatLogPanel from "@/components/ChatLogPanel";
 import TokenModal from "@/components/TokenModal";
 import CostTracker from "@/components/CostTracker";
+import NetworkErrorBanner from "@/components/NetworkErrorBanner";
 import { getTokenStatus } from "@/lib/api";
 import { toastWarning } from "@/store/toastStore";
 
@@ -52,6 +53,9 @@ export default function Home() {
           </button>
         </div>
       </header>
+
+      {/* Network error banner */}
+      <NetworkErrorBanner />
 
       {/* Main panels */}
       <div className="flex-1 overflow-hidden">

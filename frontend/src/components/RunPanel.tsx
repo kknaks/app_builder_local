@@ -2,36 +2,19 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useProjectStore } from "@/store/projectStore";
-import { runProject, stopProject, getRunStatus, type RunStatus } from "@/lib/api";
+import {
+  runProject,
+  stopProject,
+  getRunStatus,
+  type RunStatus,
+  type RunStatusState,
+  type ContainerInfo,
+} from "@/lib/api";
 import { toastSuccess, toastError, toastInfo } from "@/store/toastStore";
-
-/** Spinner SVG */
-function Spinner({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      className={`animate-spin-fast ${className}`}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
-}
+import Spinner from "./Spinner";
 
 const STATUS_CONFIG: Record<
-  RunStatus["status"],
+  RunStatusState,
   { label: string; icon: string; color: string; bgColor: string }
 > = {
   idle: {
@@ -72,6 +55,25 @@ const STATUS_CONFIG: Record<
   },
 };
 
+/** Map backend status string to our frontend RunStatusState */
+function mapBackendStatus(backendStatus: string): RunStatusState {
+  switch (backendStatus) {
+    case "running":
+      return "running";
+    case "stopped":
+    case "exited":
+      return "stopped";
+    case "error":
+      return "error";
+    case "starting":
+      return "starting";
+    case "no_compose":
+    case "unknown":
+    default:
+      return "idle";
+  }
+}
+
 interface RunPanelProps {
   /** Only show when project is in completed status */
   visible?: boolean;
@@ -86,6 +88,7 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
   const [runStatus, setRunStatus] = useState<RunStatus>({ status: "idle" });
   const [actionLoading, setActionLoading] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showContainers, setShowContainers] = useState(false);
 
   // Stop polling
   const stopPolling = useCallback(() => {
@@ -99,15 +102,18 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
   const fetchStatus = useCallback(async () => {
     if (!selectedId) return;
     try {
-      const status = await getRunStatus(selectedId);
-      setRunStatus(status);
+      const resp = await getRunStatus(selectedId);
+      const mappedStatus = mapBackendStatus(resp.status);
+      setRunStatus({
+        status: mappedStatus,
+        urls: resp.urls,
+        containers: resp.containers,
+        error: resp.error ?? undefined,
+      });
 
-      // Stop polling when in terminal state
-      if (status.status === "running" || status.status === "stopped" || status.status === "error" || status.status === "idle") {
-        // Keep polling if running (to detect crashes), stop for terminal states
-        if (status.status !== "running") {
-          stopPolling();
-        }
+      // Stop polling when in terminal state (keep polling if running to detect crashes)
+      if (mappedStatus !== "running" && mappedStatus !== "starting") {
+        stopPolling();
       }
     } catch {
       // API might not be ready, that's ok
@@ -136,11 +142,25 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
     setRunStatus({ status: "starting" });
     try {
       const result = await runProject(selectedId);
-      toastInfo("앱을 시작하고 있습니다...");
-      if (result.url) {
-        setRunStatus({ status: "running", url: result.url });
-        toastSuccess(`앱이 실행되었습니다: ${result.url}`);
+      if (result.status === "running") {
+        setRunStatus({
+          status: "running",
+          urls: result.urls,
+          containers: result.containers,
+        });
+        const firstUrl = Object.values(result.urls)[0];
+        toastSuccess(`앱이 실행되었습니다${firstUrl ? `: ${firstUrl}` : ""}`);
+        // Start polling to monitor container health
+        startPolling();
+      } else if (result.status === "error") {
+        setRunStatus({
+          status: "error",
+          error: result.error ?? result.message,
+        });
+        toastError(`앱 실행 실패: ${result.error ?? result.message}`);
       } else {
+        // Other states (might be still starting) — poll for updates
+        toastInfo("앱을 시작하고 있습니다...");
         startPolling();
       }
     } catch (e) {
@@ -158,27 +178,75 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
     setActionLoading(true);
     setRunStatus((prev) => ({ ...prev, status: "stopping" }));
     try {
-      await stopProject(selectedId);
-      setRunStatus({ status: "stopped" });
-      toastInfo("앱이 중지되었습니다.");
-      stopPolling();
+      const result = await stopProject(selectedId);
+      if (result.status === "error") {
+        toastError(`앱 중지 실패: ${result.error ?? result.message}`);
+        setRunStatus((prev) => ({
+          ...prev,
+          status: prev.status === "stopping" ? "running" : prev.status,
+        }));
+      } else {
+        setRunStatus({ status: "stopped" });
+        toastInfo("앱이 중지되었습니다.");
+        stopPolling();
+      }
     } catch (e) {
       const errMsg = (e as Error).message;
       toastError(`앱 중지 실패: ${errMsg}`);
-      setRunStatus((prev) => ({ ...prev, status: prev.status === "stopping" ? "running" : prev.status }));
+      setRunStatus((prev) => ({
+        ...prev,
+        status: prev.status === "stopping" ? "running" : prev.status,
+      }));
     } finally {
       setActionLoading(false);
     }
   }, [selectedId, stopPolling]);
 
+  // Handle Restart
+  const handleRestart = useCallback(async () => {
+    if (!selectedId) return;
+    setActionLoading(true);
+    setRunStatus((prev) => ({ ...prev, status: "stopping" }));
+    try {
+      await stopProject(selectedId);
+      setRunStatus({ status: "starting" });
+      toastInfo("앱을 재시작합니다...");
+      const result = await runProject(selectedId);
+      if (result.status === "running") {
+        setRunStatus({
+          status: "running",
+          urls: result.urls,
+          containers: result.containers,
+        });
+        toastSuccess("앱이 재시작되었습니다.");
+        startPolling();
+      } else {
+        startPolling();
+      }
+    } catch (e) {
+      const errMsg = (e as Error).message;
+      setRunStatus({ status: "error", error: errMsg });
+      toastError(`재시작 실패: ${errMsg}`);
+    } finally {
+      setActionLoading(false);
+    }
+  }, [selectedId, startPolling]);
+
   if (!visible || !selectedId || !project) return null;
 
   // Only show for completed/testing projects (or any status with existing containers)
-  const showRun = project.status === "completed" || project.status === "testing" || runStatus.status !== "idle";
+  const showRun =
+    project.status === "completed" ||
+    project.status === "testing" ||
+    runStatus.status !== "idle";
   if (!showRun) return null;
 
   const config = STATUS_CONFIG[runStatus.status];
-  const isTransitioning = runStatus.status === "starting" || runStatus.status === "stopping";
+  const isTransitioning =
+    runStatus.status === "starting" || runStatus.status === "stopping";
+  const urls = runStatus.urls ?? {};
+  const urlEntries = Object.entries(urls);
+  const containers = runStatus.containers ?? [];
 
   return (
     <div
@@ -199,28 +267,33 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
           </div>
 
           {/* URL display when running */}
-          {runStatus.status === "running" && runStatus.url && (
-            <a
-              href={runStatus.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-md bg-green-800/40 px-3 py-1 text-xs font-mono text-green-300 hover:bg-green-800/60 transition"
-            >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                />
-              </svg>
-              {runStatus.url}
-            </a>
+          {runStatus.status === "running" && urlEntries.length > 0 && (
+            <div className="flex items-center gap-2">
+              {urlEntries.map(([service, url]) => (
+                <a
+                  key={service}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-md bg-green-800/40 px-3 py-1 text-xs font-mono text-green-300 hover:bg-green-800/60 transition"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                    />
+                  </svg>
+                  {service}: {url}
+                </a>
+              ))}
+            </div>
           )}
 
           {/* Error message */}
@@ -233,6 +306,17 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
+          {/* Container info toggle */}
+          {containers.length > 0 && (
+            <button
+              onClick={() => setShowContainers(!showContainers)}
+              className="rounded-md border border-gray-600 px-2 py-1 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition"
+              title="컨테이너 정보"
+            >
+              📦 {containers.length}
+            </button>
+          )}
+
           {/* Run button */}
           {(runStatus.status === "idle" ||
             runStatus.status === "stopped" ||
@@ -243,7 +327,7 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
               className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-50 transition"
             >
               {actionLoading ? (
-                <Spinner className="h-3.5 w-3.5" />
+                <Spinner size="sm" />
               ) : (
                 <span>🚀</span>
               )}
@@ -260,7 +344,7 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
               className="flex items-center gap-1.5 rounded-md border border-red-700 bg-red-900/30 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-900/50 disabled:opacity-50 transition"
             >
               {actionLoading ? (
-                <Spinner className="h-3.5 w-3.5" />
+                <Spinner size="sm" />
               ) : (
                 <span>⏹</span>
               )}
@@ -268,22 +352,70 @@ export default function RunPanel({ visible = true }: RunPanelProps) {
             </button>
           )}
 
-          {/* Re-run button for running state */}
+          {/* Restart button for running state */}
           {runStatus.status === "running" && (
             <button
-              onClick={async () => {
-                await handleStop();
-                // Small delay then re-run
-                setTimeout(handleRun, 1000);
-              }}
+              onClick={handleRestart}
               disabled={actionLoading}
               className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition"
             >
-              🔄 재시작
+              {actionLoading ? (
+                <Spinner size="sm" />
+              ) : (
+                <span>🔄</span>
+              )}
+              재시작
             </button>
           )}
         </div>
       </div>
+
+      {/* Container details (collapsible) */}
+      {showContainers && containers.length > 0 && (
+        <div className="mt-2 rounded-md bg-gray-900/50 border border-gray-700 overflow-hidden">
+          <table className="w-full text-xs text-gray-300">
+            <thead>
+              <tr className="border-b border-gray-700 text-gray-500">
+                <th className="px-3 py-1.5 text-left font-medium">서비스</th>
+                <th className="px-3 py-1.5 text-left font-medium">상태</th>
+                <th className="px-3 py-1.5 text-left font-medium">포트</th>
+              </tr>
+            </thead>
+            <tbody>
+              {containers.map((c: ContainerInfo) => (
+                <tr key={c.name} className="border-b border-gray-800 last:border-0">
+                  <td className="px-3 py-1.5 font-mono">{c.service}</td>
+                  <td className="px-3 py-1.5">
+                    <span
+                      className={`inline-flex items-center gap-1 ${
+                        c.state === "running"
+                          ? "text-green-400"
+                          : c.state === "exited"
+                          ? "text-gray-500"
+                          : "text-yellow-400"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          c.state === "running"
+                            ? "bg-green-400"
+                            : c.state === "exited"
+                            ? "bg-gray-500"
+                            : "bg-yellow-400"
+                        }`}
+                      />
+                      {c.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 font-mono text-gray-500">
+                    {c.ports || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

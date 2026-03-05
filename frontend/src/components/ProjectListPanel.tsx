@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
+import type { Project } from "@/lib/api";
 import CreateProjectModal from "./CreateProjectModal";
+import ConfirmDialog from "./ConfirmDialog";
 import EmptyState from "./EmptyState";
 import { ProjectListSkeleton } from "./LoadingSkeleton";
-import { toastError } from "@/store/toastStore";
+import { toastError, toastSuccess } from "@/store/toastStore";
 
 // Project status → overall icon
 const PROJECT_STATUS_ICONS: Record<string, string> = {
@@ -68,13 +70,11 @@ function getPhaseStatuses(projectStatus: string) {
     let phaseStatus: "pending" | "active" | "completed" | "failed";
 
     if (projectStatus === "failed") {
-      // Mark phases up to current as completed, current as failed
       phaseStatus = idx <= currentIdx ? "completed" : "pending";
       if (idx === currentIdx) phaseStatus = "failed";
     } else if (idx < currentIdx) {
       phaseStatus = "completed";
     } else if (idx === currentIdx) {
-      // Active phase depends on project status
       if (
         projectStatus === "plan_complete" ||
         projectStatus === "review_complete" ||
@@ -105,12 +105,28 @@ export default function ProjectListPanel() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchProjects().catch((e) => {
       toastError(`프로젝트 목록 로드 실패: ${(e as Error).message}`);
     });
   }, [fetchProjects]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteProject(deleteTarget.id);
+      toastSuccess(`"${deleteTarget.name}" 프로젝트가 삭제되었습니다.`);
+      setDeleteTarget(null);
+    } catch (err) {
+      toastError(`삭제 실패: ${(err as Error).message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-gray-900 text-white">
@@ -182,15 +198,7 @@ export default function ProjectListPanel() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (
-                        confirm(
-                          `"${project.name}" 프로젝트를 삭제하시겠습니까?`
-                        )
-                      ) {
-                        deleteProject(project.id).catch((err) =>
-                          toastError(`삭제 실패: ${(err as Error).message}`)
-                        );
-                      }
+                      setDeleteTarget(project);
                     }}
                     className="ml-2 flex-shrink-0 rounded p-1 text-gray-500 hover:bg-red-900/30 hover:text-red-400 transition"
                     title="삭제"
@@ -243,6 +251,22 @@ export default function ProjectListPanel() {
       <CreateProjectModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="프로젝트 삭제"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
+            : ""
+        }
+        confirmLabel="삭제"
+        cancelLabel="취소"
+        variant="danger"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );
