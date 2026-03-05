@@ -167,6 +167,64 @@ Bolt.new, Lovable, Cursor Composer 등 AI 앱 빌더가 등장했지만:
 - 프로젝트별 격리 디렉토리에서 실행: `~/app_builder_projects/{project_id}/`
 - 에이전트 간 데이터 전달: 파일 시스템 기반 (PRD.md, API_SPEC.md 등)
 
+#### Python 구현 상세
+
+Claude Code는 CLI 도구이므로 Python `subprocess`로 직접 실행한다.
+
+**기본 실행 (결과만 받기):**
+```python
+import subprocess
+
+result = subprocess.run(
+    ["claude", "--dangerously-skip-permissions", "-p", prompt],
+    capture_output=True, text=True,
+    cwd=f"projects/{project_id}/"
+)
+output = result.stdout
+```
+
+**실시간 스트리밍 (pty + WebSocket):**
+```python
+import pty, os, subprocess, select
+
+master, slave = pty.openpty()
+proc = subprocess.Popen(
+    ["claude", "--dangerously-skip-permissions", "-p", prompt],
+    stdout=slave, stderr=slave, stdin=slave,
+    cwd=f"projects/{project_id}/"
+)
+os.close(slave)
+
+# master fd에서 실시간 읽기 → WebSocket으로 프론트엔드 전달
+while proc.poll() is None:
+    if select.select([master], [], [], 0.1)[0]:
+        chunk = os.read(master, 1024).decode("utf-8", errors="replace")
+        await websocket.send_text(chunk)  # FastAPI WebSocket
+```
+
+**에이전트별 실행 예시:**
+```python
+# Planner Agent
+proc = spawn_claude(
+    prompt=f"이 아이디어로 PRD.md를 작성해: {idea_text}",
+    cwd=f"projects/{project_id}/"
+)
+
+# Backend Agent
+proc = spawn_claude(
+    prompt="PRD.md를 읽고 백엔드를 구현해. 완료 후 API_SPEC.md를 생성해.",
+    cwd=f"projects/{project_id}/"
+)
+
+# Frontend Agent
+proc = spawn_claude(
+    prompt="PRD.md와 API_SPEC.md를 읽고 프론트엔드를 구현해.",
+    cwd=f"projects/{project_id}/"
+)
+```
+
+> Claude Code CLI는 언어에 종속되지 않는 프로세스 spawn 방식. Python, Node.js, Go 등 어떤 언어든 subprocess로 실행 가능.
+
 ### 6.2 에이전트별 역할
 
 **Planner Agent (F3)**
