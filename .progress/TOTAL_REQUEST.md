@@ -54,7 +54,7 @@
 - API 연동 실제 동작 확인
 - `docker compose up` 정상 실행
 
-검증 실패 시 → 자동 수정 최대 3회 → 그래도 실패 시 케케낙 Discord DM 보고 후 대기
+검증 실패 시 → 자동 수정 최대 3회 → 그래도 실패 시 케케낙 Discord DM 보고 후 다음 스프린트 진행
 
 ### 커밋 규칙
 - Conventional Commits
