@@ -38,6 +38,9 @@ App Builder Local은:
 | 레이어 | 기술 | 비고 |
 |--------|------|------|
 | 프론트엔드 | Next.js | 단일 페이지 (목록 + 대시보드 + 채팅) |
+| 플로우 에디터 | React Flow + dagre | n8n 스타일 노드 그래프 시각화 + 자동 레이아웃 |
+| 패널 리사이즈 | react-resizable-panels | 목록/대시보드/채팅 3패널 리사이즈 |
+| 로그 가상 스크롤 | react-window | 대량 로그 메시지 렌더링 성능 최적화 |
 | 백엔드 | Python (FastAPI) | 오케스트레이터 + API 서버 |
 | DB | PostgreSQL | 프로젝트/에이전트/실행 이력 관리 |
 | AI 에이전트 | Claude Code CLI | `claude --dangerously-skip-permissions` (pty spawn) |
@@ -424,13 +427,37 @@ PM Agent: 총괄 관리
 
 ### 7.3 에이전트 실행 방식
 
-각 에이전트 = Claude Code CLI 프로세스 (pty spawn).
+#### 라이프사이클: On-demand Spawn
+
+에이전트는 **상시 연결이 아니다.** PM이 필요한 시점에 spawn → 작업 완료 → 프로세스 종료.
+
+```
+PM이 Backend Agent에게 작업 지시
+  → agent_tasks에 태스크 생성 (status: pending)
+  → Claude Code CLI 프로세스 spawn (pty)
+  → 작업 수행 (실시간 로그 → WebSocket)
+  → 작업 완료
+  → agent_tasks 상태 업데이트 (status: completed)
+  → 프로세스 종료 (메모리 해제)
+```
+
+#### 실행 규칙
+
+- **기본: 순차 실행** — PM이 한 에이전트 작업 완료 후 다음 에이전트 spawn
+- **병렬 실행** — PM이 명시적으로 병렬 지시할 때만 (예: BE/FE/Design 동시 검토)
+- **동시 최대 프로세스**: 설정 가능 (기본값 3)
+
+#### Python 구현
 
 ```python
-import subprocess, pty, os, select
+import subprocess, pty, os, select, asyncio
 
-def spawn_agent(agent_md_path: str, prompt: str, project_dir: str):
-    """에이전트별 Claude Code 프로세스 실행"""
+async def spawn_agent(agent: str, prompt: str, project_dir: str, task_id: int):
+    """에이전트 프로세스 spawn → 작업 완료 → 종료"""
+    # 1. 태스크 상태 업데이트
+    await update_task_status(task_id, "running")
+
+    # 2. Claude Code CLI spawn
     master, slave = pty.openpty()
     proc = subprocess.Popen(
         ["claude", "--dangerously-skip-permissions", "-p", prompt],
@@ -439,21 +466,40 @@ def spawn_agent(agent_md_path: str, prompt: str, project_dir: str):
     )
     os.close(slave)
 
-    # master fd에서 실시간 읽기 → WebSocket 전달
+    # 3. 실시간 로그 → WebSocket
     while proc.poll() is None:
         if select.select([master], [], [], 0.1)[0]:
             chunk = os.read(master, 1024).decode("utf-8", errors="replace")
             await websocket.send_text(chunk)
+        await asyncio.sleep(0)  # 이벤트 루프 양보
 
+    # 4. 완료 → 프로세스 종료 + 상태 업데이트
+    os.close(master)
+    status = "completed" if proc.returncode == 0 else "failed"
+    await update_task_status(task_id, status)
     return proc.returncode
+
+# 병렬 실행 예시 (기획 검토: BE/FE/Design 동시)
+async def parallel_review(project_dir: str, tasks: list):
+    await asyncio.gather(*[
+        spawn_agent(t["agent"], t["prompt"], project_dir, t["task_id"])
+        for t in tasks
+    ])
 ```
 
 ### 7.4 에이전트 간 통신
 
-파일 시스템 기반:
-- PM → 에이전트: 명령을 파일 or 프롬프트로 전달
-- 에이전트 → PM: 결과 파일 생성 + 완료 보고
-- 공유 문서: idea.md, PRD.md, Phase.md, API_SPEC.md
+통신 채널을 **역할별로 분리:**
+
+| 채널 | 용도 | 예시 |
+|------|------|------|
+| **파일 시스템** | 코드/문서 공유 전용 | idea.md, PRD.md, Phase.md, API_SPEC.md, 소스 코드 |
+| **DB (agent_tasks)** | 명령/상태 관리 | PM → BE "API 구현해" (pending → running → completed) |
+| **DB (chat_messages)** | 유저 ↔ 에이전트 대화 이력 | 채팅 패널 메시지 저장 |
+
+- **파일 시스템**: 에이전트가 생성/수정하는 산출물. 코드, 문서, 설정 파일
+- **agent_tasks**: PM이 에이전트에게 내리는 명령 큐. 상태 추적 (pending → running → completed/failed)
+- **chat_messages**: 유저와 에이전트 간 대화 기록. 에이전트 전환해도 히스토리 유지
 
 ### 7.5 공통 리소스
 
@@ -541,6 +587,35 @@ root/kknaks_pr/
 | created_at | TIMESTAMP DEFAULT NOW() | |
 | updated_at | TIMESTAMP DEFAULT NOW() | |
 
+### chat_messages
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 메시지 ID |
+| project_id | INT FK → projects.id | 프로젝트 |
+| agent | VARCHAR(20) NOT NULL | 대화 대상 에이전트 (`pm` / `planner` / `backend` / `frontend` / `design`) |
+| role | VARCHAR(10) NOT NULL | `user` / `agent` |
+| content | TEXT NOT NULL | 메시지 내용 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+> 에이전트별로 대화 히스토리 분리. 에이전트 버튼 전환 시 해당 agent의 메시지만 조회.
+
+### agent_tasks
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | 태스크 ID |
+| project_id | INT FK → projects.id | 프로젝트 |
+| agent | VARCHAR(20) NOT NULL | 대상 에이전트 |
+| command | TEXT NOT NULL | PM이 내린 명령 내용 |
+| status | VARCHAR(20) NOT NULL DEFAULT 'pending' | 상태 |
+| result_summary | TEXT | 작업 결과 요약 |
+| started_at | TIMESTAMP | 실행 시작 시간 |
+| completed_at | TIMESTAMP | 완료 시간 |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+**status 값:** `pending` → `running` → `completed` / `failed`
+
 ### settings
 
 | 컬럼 | 타입 | 설명 |
@@ -573,8 +648,55 @@ root/kknaks_pr/
 | POST | `/api/projects/{id}/stop` | Docker Compose 중지 |
 | GET | `/api/projects/{id}/flow` | 대시보드 플로우 노드 조회 |
 | GET | `/api/projects/{id}/agents` | 에이전트 상태 조회 |
-| WS | `/ws/projects/{id}/chat` | 유저 ↔ PM 실시간 채팅 |
+| WS | `/ws/projects/{id}/chat` | 유저 ↔ 에이전트 실시간 채팅 |
 | WS | `/ws/projects/{id}/logs` | 에이전트 로그 스트리밍 |
+
+### 10.1 WebSocket 메시지 프로토콜
+
+#### 채팅 WS (`/ws/projects/{id}/chat`)
+
+**클라이언트 → 서버:**
+```json
+// 메시지 전송
+{"type": "message", "agent": "pm", "content": "기획서 확인했습니다. 승인합니다."}
+
+// 에이전트 전환
+{"type": "switch_agent", "agent": "backend"}
+
+// 채팅 히스토리 요청
+{"type": "history", "agent": "planner", "limit": 50}
+```
+
+**서버 → 클라이언트:**
+```json
+// 에이전트 응답
+{"type": "message", "agent": "pm", "role": "agent", "content": "검토 결과를 취합하겠습니다."}
+
+// 에이전트 전환 확인
+{"type": "agent_switched", "agent": "backend", "status": "idle"}
+
+// 에이전트 상태 변경
+{"type": "agent_status", "agent": "backend", "status": "running"}
+
+// 히스토리 응답
+{"type": "history", "agent": "planner", "messages": [...]}
+```
+
+#### 로그 WS (`/ws/projects/{id}/logs`)
+
+**서버 → 클라이언트:**
+```json
+// 실행 로그
+{"type": "log", "agent": "backend", "level": "info", "text": "API 엔드포인트 생성 중..."}
+
+// 태스크 상태 변경
+{"type": "task_update", "task_id": 12, "agent": "frontend", "status": "completed"}
+
+// 플로우 노드 상태 변경
+{"type": "flow_update", "node_id": 5, "status": "active"}
+```
+
+**`agent` 필드 값:** `pm` / `planner` / `backend` / `frontend` / `design`
 
 ---
 
