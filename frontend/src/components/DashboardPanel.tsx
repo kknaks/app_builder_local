@@ -40,9 +40,21 @@ const STATUS_COLORS: Record<string, { bg: string; border: string; glow: string }
   },
 };
 
+const AGENT_BADGE_COLORS: Record<string, string> = {
+  be: "bg-green-600",
+  fe: "bg-blue-600",
+  de: "bg-pink-600",
+  pl: "bg-yellow-600",
+  pm: "bg-purple-600",
+  test: "bg-cyan-600",
+};
+
 interface FlowNodeData {
   label: string;
   status: string;
+  agent?: string;
+  retry_count?: number;
+  error_message?: string;
   [key: string]: unknown;
 }
 
@@ -50,10 +62,13 @@ interface FlowNodeData {
 function StageNode({ data }: { data: FlowNodeData }) {
   const colors = STATUS_COLORS[data.status] || STATUS_COLORS.pending;
   const isRunning = data.status === "running";
+  const isFailed = data.status === "failed";
 
   return (
     <div
-      className={`rounded-lg border-2 ${colors.border} ${colors.bg} ${colors.glow} px-6 py-3 text-center transition-all duration-300`}
+      className={`rounded-lg border-2 ${colors.border} ${colors.bg} ${colors.glow} px-6 py-3 text-center transition-all duration-300 ${
+        isRunning ? "animate-implementation-pulse" : ""
+      }`}
     >
       <Handle
         type="target"
@@ -64,8 +79,35 @@ function StageNode({ data }: { data: FlowNodeData }) {
         {isRunning && (
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-300" />
         )}
+        {isFailed && (
+          <span className="inline-block h-2 w-2 rounded-full bg-red-300" />
+        )}
         <span className="text-sm font-semibold text-white">{data.label}</span>
       </div>
+      {/* Agent badge */}
+      {data.agent && (
+        <div className="mt-1 flex items-center justify-center gap-1">
+          <span
+            className={`rounded px-1.5 py-0.5 text-[9px] font-bold text-white ${
+              AGENT_BADGE_COLORS[data.agent] || "bg-gray-600"
+            }`}
+          >
+            {data.agent.toUpperCase()}
+          </span>
+        </div>
+      )}
+      {/* Retry count for failed nodes */}
+      {isFailed && data.retry_count !== undefined && data.retry_count > 0 && (
+        <div className="mt-1 text-[10px] text-red-300 font-bold">
+          재시도 {data.retry_count}/3
+        </div>
+      )}
+      {/* Error tooltip indicator */}
+      {isFailed && data.error_message && (
+        <div className="mt-1 max-w-[150px] truncate text-[9px] text-red-300/70">
+          {data.error_message}
+        </div>
+      )}
       <Handle
         type="source"
         position={Position.Right}
@@ -162,21 +204,35 @@ export default function DashboardPanel() {
       id: n.id,
       type: "stage",
       position: { x: 0, y: 0 },
-      data: { label: n.label, status: n.status },
-    }));
-
-    const rfEdges: Edge[] = flowEdges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      animated: flowNodes.find((n) => n.id === e.target)?.status === "running",
-      style: {
-        stroke:
-          flowNodes.find((n) => n.id === e.target)?.status === "running"
-            ? "#60a5fa"
-            : "#4b5563",
+      data: {
+        label: n.label,
+        status: n.status,
+        agent: n.agent,
+        retry_count: n.retry_count,
+        error_message: n.error_message,
       },
     }));
+
+    const rfEdges: Edge[] = flowEdges.map((e) => {
+      const targetNode = flowNodes.find((n) => n.id === e.target);
+      const isTargetRunning = targetNode?.status === "running";
+      const isTargetFailed = targetNode?.status === "failed";
+
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        animated: isTargetRunning,
+        style: {
+          stroke: isTargetRunning
+            ? "#60a5fa"
+            : isTargetFailed
+            ? "#f87171"
+            : "#4b5563",
+          strokeWidth: isTargetRunning ? 2 : 1,
+        },
+      };
+    });
 
     return getLayoutedElements(rfNodes, rfEdges);
   }, [flowNodes, flowEdges]);
@@ -205,6 +261,14 @@ export default function DashboardPanel() {
     );
   }
 
+  // Compute stats for implementation nodes
+  const implNodes = flowNodes.filter(
+    (n) => n.agent || n.id.includes("impl") || n.id.includes("sprint")
+  );
+  const completedCount = implNodes.filter((n) => n.status === "completed").length;
+  const runningCount = implNodes.filter((n) => n.status === "running").length;
+  const failedCount = implNodes.filter((n) => n.status === "failed").length;
+
   return (
     <div className="h-full w-full bg-gray-950">
       {/* Header */}
@@ -215,8 +279,23 @@ export default function DashboardPanel() {
             {project.status}
           </span>
         </div>
-        {/* Legend */}
         <div className="flex items-center gap-3 text-[10px] text-gray-500">
+          {/* Implementation progress inline */}
+          {implNodes.length > 0 && (
+            <span className="flex items-center gap-2 text-[10px] text-gray-400">
+              {runningCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  진행 {runningCount}
+                </span>
+              )}
+              <span>✅ {completedCount}/{implNodes.length}</span>
+              {failedCount > 0 && (
+                <span className="text-red-400">❌ {failedCount}</span>
+              )}
+            </span>
+          )}
+          {/* Legend */}
           <span className="flex items-center gap-1">
             <span className="inline-block h-2 w-2 rounded-full bg-gray-500" />
             대기

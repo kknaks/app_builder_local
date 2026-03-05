@@ -110,6 +110,31 @@ export function submitFeedback(
   });
 }
 
+// ─── Implementation Flow ──────────────────────────────────
+export function startSprint(projectId: string): Promise<{ task_id: string }> {
+  return apiFetch<{ task_id: string }>(`/api/projects/${projectId}/sprint`, {
+    method: "POST",
+  });
+}
+
+export function startImplementation(projectId: string): Promise<{ task_id: string }> {
+  return apiFetch<{ task_id: string }>(`/api/projects/${projectId}/implement`, {
+    method: "POST",
+  });
+}
+
+export function cancelProject(projectId: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/projects/${projectId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function cancelTask(projectId: string, taskId: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/projects/${projectId}/tasks/${taskId}/cancel`, {
+    method: "POST",
+  });
+}
+
 // ─── Flow Nodes ───────────────────────────────────────────
 export interface FlowNode {
   id: string;
@@ -117,6 +142,9 @@ export interface FlowNode {
   status: "pending" | "running" | "completed" | "failed";
   type?: string;
   parent_id?: string | null;
+  agent?: string;
+  retry_count?: number;
+  error_message?: string;
 }
 
 export interface FlowEdge {

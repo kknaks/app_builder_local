@@ -10,6 +10,11 @@ import { getChatWsUrl } from "@/lib/api";
 import ReviewCard, { type ReviewResult } from "./ReviewCard";
 import ApprovalBar from "./ApprovalBar";
 import PlanningActions, { type PlanPhase } from "./PlanningActions";
+import ImplementationActions, {
+  type ImplPhase,
+} from "./ImplementationActions";
+import EscalationBar, { type Escalation } from "./EscalationBar";
+import ImplementationProgress from "./ImplementationProgress";
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);
@@ -51,25 +56,31 @@ export default function ChatPanel() {
   const incrementUnread = useAgentStore((s) => s.incrementUnread);
   const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
   const updateNodeStatus = useFlowStore((s) => s.updateNodeStatus);
+  const updateNode = useFlowStore((s) => s.updateNode);
 
   const [input, setInput] = useState("");
   const [planPhase, setPlanPhase] = useState<PlanPhase>("idle");
+  const [implPhase, setImplPhase] = useState<ImplPhase>("idle");
   const [reviewResults, setReviewResults] = useState<ReviewResult[]>([]);
   const [showApprovalBar, setShowApprovalBar] = useState(false);
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const previousAgentRef = useRef<AgentId>(activeAgentId);
   const isInitialLoadRef = useRef(true);
 
-  // Derive planning phase from project status
+  // Derive planning/implementation phase from project status
   useEffect(() => {
     if (!project) {
       setPlanPhase("idle");
+      setImplPhase("idle");
       setShowApprovalBar(false);
       setReviewResults([]);
       return;
     }
     const status = project.status;
+
+    // Planning phases
     if (status === "planning") setPlanPhase("planning");
     else if (status === "plan_complete") setPlanPhase("plan_complete");
     else if (status === "reviewing") setPlanPhase("reviewing");
@@ -79,8 +90,30 @@ export default function ChatPanel() {
     } else if (status === "approved") {
       setPlanPhase("approved");
       setShowApprovalBar(false);
+      setImplPhase("approved");
     } else {
       setPlanPhase("idle");
+    }
+
+    // Implementation phases
+    if (status === "sprint_planning") {
+      setImplPhase("sprint_planning");
+      setPlanPhase("approved");
+    } else if (status === "sprint_ready" || status === "sprint_complete") {
+      setImplPhase("sprint_ready");
+      setPlanPhase("approved");
+    } else if (status === "implementing") {
+      setImplPhase("implementing");
+      setPlanPhase("approved");
+    } else if (status === "testing") {
+      setImplPhase("testing");
+      setPlanPhase("approved");
+    } else if (status === "completed") {
+      setImplPhase("completed");
+      setPlanPhase("approved");
+    } else if (status === "failed") {
+      setImplPhase("failed");
+      setPlanPhase("approved");
     }
   }, [project]);
 
@@ -102,6 +135,12 @@ export default function ChatPanel() {
         reviews?: ReviewResult[];
         node_id?: string;
         node_status?: string;
+        node_retry_count?: number;
+        node_error?: string;
+        escalation?: Escalation;
+        message?: string;
+        escalation_type?: string;
+        options?: string[];
       };
 
       if (msg.type === "history" && msg.messages) {
@@ -124,26 +163,46 @@ export default function ChatPanel() {
           msg.status as "active" | "idle" | "error"
         );
       } else if (msg.type === "phase_update" && msg.phase) {
-        // Planning phase updates from server
-        const phase = msg.phase as PlanPhase;
-        setPlanPhase(phase);
-        if (phase === "review_complete") {
-          setShowApprovalBar(true);
+        // Phase updates from server (covers both planning and implementation)
+        const phase = msg.phase;
+        // Planning phases
+        if (["planning", "plan_complete", "reviewing", "review_complete", "approved"].includes(phase)) {
+          setPlanPhase(phase as PlanPhase);
+          if (phase === "review_complete") setShowApprovalBar(true);
+          if (phase === "approved") {
+            setShowApprovalBar(false);
+            setImplPhase("approved");
+          }
         }
-        if (phase === "approved") {
-          setShowApprovalBar(false);
+        // Implementation phases
+        if (["sprint_planning", "sprint_ready", "implementing", "testing", "completed", "failed"].includes(phase)) {
+          setImplPhase(phase as ImplPhase);
+          setPlanPhase("approved");
         }
       } else if (msg.type === "review_results" && msg.reviews) {
-        // Review results from agents
         setReviewResults(msg.reviews);
         setShowApprovalBar(true);
         setPlanPhase("review_complete");
-      } else if (msg.type === "flow_update" && msg.node_id && msg.node_status) {
-        // Flow node status update
-        updateNodeStatus(
-          msg.node_id,
-          msg.node_status as "pending" | "running" | "completed" | "failed"
-        );
+      } else if (msg.type === "flow_update" && msg.node_id) {
+        // Flow node status update with optional retry/error info
+        if (msg.node_status) {
+          updateNode(msg.node_id, {
+            status: msg.node_status as "pending" | "running" | "completed" | "failed",
+            ...(msg.node_retry_count !== undefined && { retry_count: msg.node_retry_count }),
+            ...(msg.node_error && { error_message: msg.node_error }),
+          });
+        }
+      } else if (msg.type === "escalation") {
+        // Escalation message from PM agent
+        const escalation: Escalation = msg.escalation || {
+          id: msg.id || crypto.randomUUID(),
+          agent_id: msg.agent_id || "pm",
+          message: msg.message || msg.content || "",
+          type: (msg.escalation_type as Escalation["type"]) || "decision",
+          timestamp: msg.timestamp || new Date().toISOString(),
+          options: msg.options,
+        };
+        setEscalations((prev) => [escalation, ...prev]);
       }
     },
     [
@@ -152,7 +211,7 @@ export default function ChatPanel() {
       setMessages,
       incrementUnread,
       setAgentStatus,
-      updateNodeStatus,
+      updateNode,
     ]
   );
 
@@ -233,6 +292,7 @@ export default function ChatPanel() {
   const handleApprove = () => {
     setShowApprovalBar(false);
     setPlanPhase("approved");
+    setImplPhase("approved");
     updateNodeStatus("plan-approve", "completed");
     setReviewResults([]);
   };
@@ -244,6 +304,36 @@ export default function ChatPanel() {
     updateNodeStatus("plan-detail", "running");
   };
 
+  const handleEscalationApprove = useCallback(
+    (id: string, option?: string) => {
+      // Send approval response to server
+      sendMessage({
+        type: "escalation_response",
+        escalation_id: id,
+        action: "approve",
+        option,
+      });
+      setEscalations((prev) => prev.filter((e) => e.id !== id));
+    },
+    [sendMessage]
+  );
+
+  const handleEscalationReject = useCallback(
+    (id: string) => {
+      sendMessage({
+        type: "escalation_response",
+        escalation_id: id,
+        action: "reject",
+      });
+      setEscalations((prev) => prev.filter((e) => e.id !== id));
+    },
+    [sendMessage]
+  );
+
+  const handleEscalationDismiss = useCallback((id: string) => {
+    setEscalations((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
   if (!selectedId) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -254,13 +344,29 @@ export default function ChatPanel() {
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* Planning action bar */}
-      <PlanningActions phase={planPhase} onPhaseChange={setPlanPhase} />
+      {/* Planning action bar (only during planning phases) */}
+      {planPhase !== "approved" && (
+        <PlanningActions phase={planPhase} onPhaseChange={setPlanPhase} />
+      )}
+
+      {/* Implementation action bar (after planning approved) */}
+      <ImplementationActions phase={implPhase} onPhaseChange={setImplPhase} />
 
       {/* Approval bar (pinned at top when review is complete) */}
       {showApprovalBar && (
         <ApprovalBar onApprove={handleApprove} onFeedback={handleFeedback} />
       )}
+
+      {/* Escalation bars (pinned at top) */}
+      {escalations.map((esc) => (
+        <EscalationBar
+          key={esc.id}
+          escalation={esc}
+          onApprove={handleEscalationApprove}
+          onReject={handleEscalationReject}
+          onDismiss={handleEscalationDismiss}
+        />
+      ))}
 
       {/* Connection status */}
       <div className="flex items-center justify-end px-3 py-1">
@@ -323,6 +429,11 @@ export default function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Implementation progress (during implementing phase) */}
+      {(implPhase === "implementing" || implPhase === "testing") && (
+        <ImplementationProgress />
+      )}
+
       {/* Input area */}
       <div className="border-t border-gray-700 p-3">
         <div className="flex gap-2">
@@ -330,7 +441,9 @@ export default function ChatPanel() {
             type="text"
             placeholder={
               status === "connected"
-                ? "메시지를 입력하세요..."
+                ? activeAgentId === "pm" && implPhase === "implementing"
+                  ? '"현재 상황?" 으로 진행 상황 확인...'
+                  : "메시지를 입력하세요..."
                 : "연결 대기 중..."
             }
             value={input}

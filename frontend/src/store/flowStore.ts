@@ -14,6 +14,8 @@ interface FlowState {
   setFlow: (nodes: FlowNode[], edges: FlowEdge[]) => void;
   /** Update a single node's status */
   updateNodeStatus: (nodeId: string, status: NodeStatus) => void;
+  /** Update a node with partial data */
+  updateNode: (nodeId: string, patch: Partial<FlowNode>) => void;
   /** Add a node dynamically */
   addNode: (node: FlowNode) => void;
   /** Add an edge dynamically */
@@ -48,6 +50,13 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   updateNodeStatus: (nodeId, status) => {
     const nodes = get().nodes.map((n) =>
       n.id === nodeId ? { ...n, status } : n
+    );
+    set({ nodes });
+  },
+
+  updateNode: (nodeId, patch) => {
+    const nodes = get().nodes.map((n) =>
+      n.id === nodeId ? { ...n, ...patch } : n
     );
     set({ nodes });
   },

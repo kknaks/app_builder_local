@@ -14,6 +14,7 @@ export default function ChatLogPanel() {
   const [activeTab, setActiveTab] = useState<"chat" | "log">("chat");
   const selectedId = useProjectStore((s) => s.selectedId);
   const updateNodeStatus = useFlowStore((s) => s.updateNodeStatus);
+  const updateNode = useFlowStore((s) => s.updateNode);
   const addNode = useFlowStore((s) => s.addNode);
   const addEdge = useFlowStore((s) => s.addEdge);
   const setFlow = useFlowStore((s) => s.setFlow);
@@ -29,19 +30,50 @@ export default function ChatLogPanel() {
         type?: string;
         node_id?: string;
         node_status?: string;
-        node?: { id: string; label: string; status: string };
+        node_retry_count?: number;
+        node_error?: string;
+        node_agent?: string;
+        node?: {
+          id: string;
+          label: string;
+          status: string;
+          agent?: string;
+          retry_count?: number;
+          error_message?: string;
+        };
         edge?: { id: string; source: string; target: string };
-        nodes?: { id: string; label: string; status: string }[];
+        nodes?: {
+          id: string;
+          label: string;
+          status: string;
+          agent?: string;
+          retry_count?: number;
+          error_message?: string;
+        }[];
         edges?: { id: string; source: string; target: string }[];
       };
 
-      if (msg.type === "flow_update" && msg.node_id && msg.node_status) {
-        updateNodeStatus(msg.node_id, msg.node_status as NodeStatus);
+      if (msg.type === "flow_update" && msg.node_id) {
+        // Update with partial node data (status, retry, error)
+        const patch: Record<string, unknown> = {};
+        if (msg.node_status) patch.status = msg.node_status;
+        if (msg.node_retry_count !== undefined) patch.retry_count = msg.node_retry_count;
+        if (msg.node_error !== undefined) patch.error_message = msg.node_error;
+        if (msg.node_agent) patch.agent = msg.node_agent;
+
+        if (msg.node_status && Object.keys(patch).length === 1) {
+          updateNodeStatus(msg.node_id, msg.node_status as NodeStatus);
+        } else {
+          updateNode(msg.node_id, patch);
+        }
       } else if (msg.type === "flow_node_add" && msg.node) {
         addNode({
           id: msg.node.id,
           label: msg.node.label,
           status: msg.node.status as NodeStatus,
+          agent: msg.node.agent,
+          retry_count: msg.node.retry_count,
+          error_message: msg.node.error_message,
         });
       } else if (msg.type === "flow_edge_add" && msg.edge) {
         addEdge(msg.edge);
@@ -51,12 +83,15 @@ export default function ChatLogPanel() {
             id: n.id,
             label: n.label,
             status: n.status as NodeStatus,
+            agent: n.agent,
+            retry_count: n.retry_count,
+            error_message: n.error_message,
           })),
           msg.edges
         );
       }
     },
-    [updateNodeStatus, addNode, addEdge, setFlow]
+    [updateNodeStatus, updateNode, addNode, addEdge, setFlow]
   );
 
   useWebSocket({

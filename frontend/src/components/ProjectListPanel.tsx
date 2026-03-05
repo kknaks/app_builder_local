@@ -12,7 +12,11 @@ const PROJECT_STATUS_ICONS: Record<string, string> = {
   reviewing: "🔍",
   review_complete: "📋",
   approved: "✅",
+  sprint_planning: "📋",
+  sprint_ready: "📋",
+  sprint_complete: "📋",
   implementing: "🔨",
+  testing: "🧪",
   completed: "🎉",
   failed: "❌",
 };
@@ -46,7 +50,11 @@ function getPhaseStatuses(projectStatus: string) {
     reviewing: 2,
     review_complete: 3,
     approved: 3,
+    sprint_planning: 4,
+    sprint_ready: 4,
+    sprint_complete: 4,
     implementing: 4,
+    testing: 5,
     completed: 5,
     failed: -1,
   };
