@@ -1,7 +1,8 @@
 # App Builder Local — 스프린트 플랜
 
-> 작성일: 2026-03-05
+> 최종 수정일: 2026-03-06
 > 기준: PRD.md F1~F13
+> 생성 앱 스택: FastAPI + Next.js + PostgreSQL
 
 ---
 

@@ -1,6 +1,6 @@
 # App Builder Local — PRD
 
-> 최종 수정일: 2026-03-05
+> 최종 수정일: 2026-03-06
 
 ## 1. 개요
 
@@ -50,7 +50,7 @@ App Builder Local은:
 | 앱 실행 | Docker Compose | 생성된 앱 로컬 실행 |
 
 ### 생성되는 앱의 스택
-- MVP: 고정 스택 (**에이전트 skills 파일이 스택에 의존하므로 MVP 착수 전 확정 필수**)
+- **MVP: FastAPI (백엔드) + Next.js (프론트엔드) + PostgreSQL (DB)**
 - Phase 2: 사용자 선택 가능 (멀티 스택 지원)
 
 > ⚠️ **TODO:** MVP 고정 스택 확정 필요. 예: FastAPI + Next.js / Django + React 등. skills 파일 작성에 선행되어야 함.
@@ -423,11 +423,18 @@ PM Agent: 총괄 관리
 - 출력: 프론트엔드 코드
 - 작업 루프: 기능 구현 → 테스트 → 수정 (반복)
 
-**Design Agent (디자이너)**
+**Design Agent (UI/UX 렌더링 전문가)**
 - 파일: `.claude/agent/design-agent.md`
-- 역할: UI/UX 설계 + 기획 검토(디자인 관점)
-- 입력: PRD.md + PM 명령
-- 출력: 디자인 가이드 / 컴포넌트 스펙
+- 역할: UI/UX 렌더링 특화. 화면 구현 품질 담당
+- 입력: PRD.md + Phase.md + PM 명령
+- 출력:
+  - 디자인 시스템 정의 (컬러/타이포/스페이싱 토큰)
+  - Tailwind CSS 컴포넌트 스타일 가이드
+  - 페이지별 레이아웃 구조 (컴포넌트 트리)
+  - 반응형 브레이크포인트 정의
+  - 애니메이션/인터랙션 스펙
+- 기획 검토 시: UI/UX 관점 피드백 (사용성, 화면 흐름, 정보 구조)
+- 구현 단계: Frontend Agent가 만든 UI를 검토 + 스타일 개선 지시
 
 ### 7.3 에이전트 실행 방식
 
@@ -539,6 +546,246 @@ root/kknaks_pr/common/
 └── plan_phase.md       # 스프린트 플랜 폼 (사전 정의)
 ```
 
+### 7.6 에이전트 시스템 프롬프트
+
+각 에이전트 `.md` 파일에 포함되는 시스템 프롬프트 핵심 구조.
+
+**PM Agent (`pm-agent.md`)**
+```
+# 역할
+너는 프로젝트 PM(총괄 책임자)이다. 유저(클라이언트)와 에이전트 팀 사이의 소통 창구.
+
+# 규칙
+- 유저에게는 기술 용어 최소화, 쉬운 말로 보고
+- 에이전트에게는 명확한 태스크 단위로 명령
+- 에러/결정사항 발생 시 즉시 유저에게 에스컬레이션
+- 각 에이전트 결과를 검토하고 품질 기준 미달 시 재작업 지시
+- 유저가 질문하면 현재 진행 상황을 정확히 보고
+
+# 산출물
+- 스프린트 플랜 (Phase.md)
+- 에이전트 간 작업 조율 기록
+```
+
+**Planner Agent (`planner-agent.md`)**
+```
+# 역할
+너는 기획 전문가다. 비개발자의 아이디어를 실행 가능한 PRD로 변환한다.
+
+# 규칙
+- plan_form.md 폼 구조를 반드시 따른다
+- 모호한 아이디어는 구체적 질문으로 명확화
+- MVP 우선 접근 — 핵심 기능만 먼저
+- 기술 스택: 생성 앱은 FastAPI + Next.js + PostgreSQL 고정
+- 기획 완성도 80% 이상이라고 판단되면 PM에게 검토 요청
+
+# 산출물
+- 기획 문서 → 검토 통과 시 PRD.md
+- 기능 목록, 유저 플로우, DB 스키마, API 설계, 화면 구성
+```
+
+**Backend Agent (`backend-agent.md`)**
+```
+# 역할
+너는 백엔드 개발자다. FastAPI + SQLAlchemy + PostgreSQL 전문.
+
+# 규칙
+- PRD.md와 Phase.md를 반드시 참조
+- TDD: 테스트 먼저 작성 → 구현 → 통과 확인
+- API 스펙 문서(API_SPEC.md) 자동 생성 (Frontend Agent용)
+- Poetry로 의존성 관리
+- Alembic 마이그레이션 자동 생성
+- 기능 완성 시 PM에게 보고
+
+# 기획 검토 시
+- API 실현 가능성, 성능 병목, DB 설계 적절성 검토
+- 기술적 리스크 식별 + 대안 제시
+
+# 산출물
+- backend/ 디렉토리 코드
+- API_SPEC.md
+- 테스트 코드 + 통과 결과
+```
+
+**Frontend Agent (`frontend-agent.md`)**
+```
+# 역할
+너는 프론트엔드 개발자다. Next.js (App Router) + TypeScript + Tailwind CSS 전문.
+
+# 규칙
+- PRD.md, Phase.md, API_SPEC.md를 반드시 참조
+- Design Agent의 디자인 가이드를 따른다
+- 컴포넌트 단위 개발 + Storybook 고려
+- 반응형 필수 (모바일/태블릿/데스크톱)
+- 기능 완성 시 PM에게 보고
+
+# 기획 검토 시
+- 화면 구현 난이도, UX 흐름, 상태 관리 복잡도 검토
+
+# 산출물
+- frontend/ 디렉토리 코드
+- 컴포넌트 구조
+```
+
+**Design Agent (`design-agent.md`)**
+```
+# 역할
+너는 UI/UX 렌더링 전문가다. 화면의 시각적 품질과 사용성을 책임진다.
+
+# 규칙
+- Tailwind CSS 기반 디자인 시스템 정의
+- 컬러 팔레트, 타이포그래피, 스페이싱 토큰 명세
+- 페이지별 레이아웃 구조 (컴포넌트 트리) 설계
+- 반응형 브레이크포인트 정의
+- 애니메이션/트랜지션 스펙
+- Frontend Agent가 만든 UI 검토 + 개선점 피드백
+
+# 기획 검토 시
+- 정보 구조, 네비게이션 흐름, 시각적 일관성 검토
+- 사용성(UX) 관점 피드백
+
+# 산출물
+- design_system.md (디자인 토큰 + 컴포넌트 가이드)
+- 페이지별 레이아웃 명세
+- UI 검토 피드백
+```
+
+### 7.7 공통 폼 내용
+
+**plan_form.md (기획 구체화 폼)**
+
+Planner Agent가 이 구조에 맞춰 아이디어를 구체화한다.
+
+```markdown
+# {프로젝트명} — 기획서
+
+## 1. 개요
+- 한줄 요약:
+- 해결하려는 문제:
+- 타겟 유저:
+
+## 2. 핵심 기능
+| 우선순위 | 기능명 | 설명 |
+|---------|--------|------|
+| P0 (필수) | | |
+| P1 (중요) | | |
+| P2 (있으면 좋음) | | |
+
+## 3. 유저 플로우
+- 메인 플로우 (핵심 시나리오):
+- 서브 플로우:
+
+## 4. 화면 구성
+| 화면 | 설명 | 주요 컴포넌트 |
+|------|------|-------------|
+| | | |
+
+## 5. 데이터 모델
+- 핵심 엔티티:
+- 관계:
+
+## 6. API 설계
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| | | |
+
+## 7. 기술 스택
+- 백엔드: FastAPI + SQLAlchemy + PostgreSQL
+- 프론트: Next.js (App Router) + TypeScript + Tailwind CSS
+- (추가 라이브러리가 필요하면 여기 명시)
+
+## 8. MVP 범위
+- 포함:
+- 제외 (Phase 2):
+```
+
+**plan_phase.md (스프린트 플랜 폼)**
+
+PM Agent가 PRD 기반으로 스프린트를 나눈다.
+
+```markdown
+# {프로젝트명} — 스프린트 플랜
+
+## 스프린트 개요
+| 스프린트 | 기간 | 목표 | 담당 에이전트 |
+|---------|------|------|-------------|
+| S1 | 1주 | | BE/FE/Design |
+
+## 스프린트 상세
+
+### S1: {목표}
+**백엔드 태스크:**
+- [ ] ...
+
+**프론트엔드 태스크:**
+- [ ] ...
+
+**디자인 태스크:**
+- [ ] ...
+
+**완료 조건:**
+- ...
+
+**의존성:**
+- ...
+```
+
+### 7.8 프로젝트 상태 전이
+
+```
+                    ┌─────────┐
+                    │ created │ ← 프로젝트 생성 + 에이전트 세팅 완료
+                    └────┬────┘
+                         │ POST /plan
+                    ┌────▼────┐
+              ┌────▶│planning │ ← Planner Agent 기획 구체화 중
+              │     └────┬────┘
+              │          │ 기획 완성도 80%+ → PM 전달
+              │     ┌────▼─────┐
+              │     │reviewing │ ← BE/FE/Design 검토 중
+              │     └────┬─────┘
+              │          │
+              │     ┌────▼──────┐
+              │     │user_review│ ← 유저 승인 대기
+              │     └────┬──────┘
+              │          │
+              │    승인?  ├──── YES ──→ ┌──────────────────┐
+              │          │              │ sprint_planning  │ ← Phase.md 작성 중
+              └── NO ────┘              └────────┬─────────┘
+            (피드백 → planning)                   │ Phase.md 확정
+                                           ┌─────▼──────┐
+                                           │implementing│ ← 에이전트 코드 구현 중
+                                           └─────┬──────┘
+                                                  │ 구현 완료
+                                           ┌──────▼──┐
+                                           │ testing │ ← 통합 테스트
+                                           └────┬────┘
+                                                 │
+                                        성공?    ├──── YES ──→ ┌──────────┐
+                                                 │              │completed │ ✅
+                                        NO ──────┘              └──────────┘
+                                        (에러 수정 → implementing)
+
+                                        3회 실패 ──→ ┌────────┐
+                                                      │ failed │ ❌
+                                                      └────────┘
+```
+
+**전이 조건:**
+
+| 현재 상태 | → 다음 상태 | 트리거 |
+|----------|------------|--------|
+| created | planning | `POST /api/projects/{id}/plan` |
+| planning | reviewing | Planner 자체 평가 80%+ → PM 전달 |
+| reviewing | user_review | 3에이전트 검토 완료 → PM 취합 |
+| user_review | sprint_planning | `POST /api/projects/{id}/approve` |
+| user_review | planning | `POST /api/projects/{id}/feedback` |
+| sprint_planning | implementing | Phase.md 확정 → `POST /api/projects/{id}/implement` |
+| implementing | testing | 전체 기능 구현 완료 |
+| testing | completed | 통합 테스트 성공 |
+| testing | implementing | 테스트 실패 → 에러 수정 |
+| implementing | failed | 에러 수정 3회 실패 |
+
 ---
 
 ## 8. 디렉토리 구조
@@ -631,7 +878,9 @@ backend/
 | created_at | TIMESTAMP DEFAULT NOW() | |
 | updated_at | TIMESTAMP DEFAULT NOW() | |
 
-**status 값:** `created` → `planning` → `reviewing` → `sprint_planning` → `implementing` → `testing` → `completed` / `failed`
+**status 값:** `created` → `planning` → `reviewing` → `user_review` → `sprint_planning` → `implementing` → `testing` → `completed` / `failed`
+
+> 상세 전이 조건은 섹션 7.8 참고.
 
 #### agent_logs
 
@@ -860,19 +1109,18 @@ backend/
 
 ## 12. 마일스톤
 
-| 단계 | 내용 | 예상 기간 |
-|------|------|----------|
-| M1 | 프로젝트 세팅 (Next.js + FastAPI + PostgreSQL) | 1주 |
-| M2 | 단일 페이지 3패널 레이아웃 (목록 + 대시보드 + 채팅) | 1주 |
-| M3 | 프로젝트 생성 플로우 (디렉토리 + 에이전트 + skills 자동 생성) | 1주 |
-| M4 | Planner Agent + 기획 구체화 + 유저 채팅 | 2주 |
-| M5 | 기획 검토 플로우 (PM ↔ BE/FE/Design 검토 ↔ 유저 승인) | 2주 |
-| M6 | 스프린트 플랜 + 대시보드 상세 플로우 자동 생성 | 1주 |
-| M7 | 구현 단계 (PM 총괄 + 에이전트 구현 + 테스트 루프) | 3주 |
-| M8 | Docker Compose 자동 생성 + 앱 실행 | 1주 |
-| M9 | 통합 테스트 + UI 폴리싱 | 1주 |
+> SPRINT_PLAN.md와 동기화. 6스프린트 11주 계획.
 
-**총 예상: ~13주**
+| 스프린트 | 기간 | 내용 | 병렬 |
+|---------|------|------|------|
+| S1 | 1주 | 프로젝트 세팅 + DB 스키마 + Docker 개발환경 | - |
+| S2 | 2주 | 토큰 설정 + 프로젝트 CRUD + 3패널 레이아웃 | ⚡ BE/FE |
+| S3 | 2주 | 에이전트 엔진 (pty spawn) + 채팅/로그 WebSocket | ⚡ BE/FE |
+| S4 | 2주 | 기획 플로우 (Planner + 검토 + 승인) + 대시보드 시각화 | ⚡ BE/FE |
+| S5 | 2주 | 구현 플로우 (PM 총괄 + 스프린트) + 에러 자동 수정 | - |
+| S6 | 2주 | Docker 실행 + 통합 테스트 + UI 폴리싱 | - |
+
+**총 예상: ~11주**
 
 ---
 
@@ -889,7 +1137,7 @@ backend/
 ## 14. 합의 사항
 - 타겟 유저: 비개발자 (클라이언트 역할)
 - 자체 스택: Next.js + Python(FastAPI) + PostgreSQL
-- 생성 앱 스택: MVP 고정 (추후 결정), Phase 2 가변
+- 생성 앱 스택: MVP FastAPI + Next.js + PostgreSQL 고정, Phase 2 가변
 - UI: 단일 페이지 3패널 (목록 + 대시보드 + 채팅)
 - 에이전트 5명: PM / Planner / Backend / Frontend / Design
 - 유저 ↔ 에이전트 직접 대화 가능 (에이전트 버튼 클릭으로 전환, 기본값은 PM)
