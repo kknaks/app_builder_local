@@ -60,3 +60,34 @@ export function createProject(data: {
 export function deleteProject(id: string): Promise<void> {
   return apiFetch<void>(`/api/projects/${id}`, { method: "DELETE" });
 }
+
+// ─── Cost Tracking ────────────────────────────────────────
+export interface AgentCost {
+  agent_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_cost: number;
+}
+
+export interface ProjectCost {
+  project_id: string;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost: number;
+  by_agent: AgentCost[];
+}
+
+export function getProjectCost(projectId: string): Promise<ProjectCost> {
+  return apiFetch<ProjectCost>(`/api/projects/${projectId}/cost`);
+}
+
+// ─── WebSocket URLs ───────────────────────────────────────
+const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || "ws://localhost:28888";
+
+export function getChatWsUrl(projectId: string): string {
+  return `${WS_BASE}/ws/projects/${projectId}/chat`;
+}
+
+export function getLogWsUrl(projectId: string): string {
+  return `${WS_BASE}/ws/projects/${projectId}/logs`;
+}
