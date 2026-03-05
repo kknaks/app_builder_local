@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.routers.agent_tasks import router as agent_tasks_router
 from app.routers.chat import router as chat_router
 from app.routers.cost import router as cost_router
+from app.routers.flow_nodes import router as flow_nodes_router
+from app.routers.planning import router as planning_router
 from app.routers.projects import router as projects_router
 from app.routers.settings import router as settings_router
 from app.routers.websocket import router as ws_router
@@ -64,6 +66,8 @@ app.include_router(projects_router)
 app.include_router(agent_tasks_router)
 app.include_router(chat_router)
 app.include_router(cost_router)
+app.include_router(planning_router)
+app.include_router(flow_nodes_router)
 app.include_router(ws_router)
 
 

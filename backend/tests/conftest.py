@@ -38,8 +38,11 @@ async def client(db_engine):
     session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
-        async with session_factory() as session:
+        session = session_factory()
+        try:
             yield session
+        finally:
+            await session.close()
 
     app.dependency_overrides[get_db] = override_get_db
 
