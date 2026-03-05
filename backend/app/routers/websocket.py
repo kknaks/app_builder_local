@@ -174,3 +174,55 @@ async def websocket_logs(
         logger.error("WebSocket logs error: %s", e)
     finally:
         await ws_manager.disconnect(websocket, project_id, "logs")
+
+
+@router.websocket("/ws/projects/{project_id}/flow")
+async def websocket_flow(
+    websocket: WebSocket,
+    project_id: int,
+):
+    """WebSocket endpoint for flow node status updates.
+
+    Server pushes:
+    - {"type": "flow_update", "nodes": [...], "edges": [...]}
+
+    Client can send:
+    - {"type": "ping"} → receives {"type": "pong"}
+    """
+    await ws_manager.connect(websocket, project_id, "flow")
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                await ws_manager.send_personal(
+                    websocket,
+                    {"type": "error", "error": "Invalid JSON"},
+                )
+                continue
+
+            msg_type = data.get("type", "")
+
+            if msg_type == "ping":
+                await ws_manager.send_personal(websocket, {"type": "pong"})
+                continue
+
+            await ws_manager.send_personal(
+                websocket,
+                {"type": "error", "error": "Flow endpoint is read-only (except ping)"},
+            )
+
+    except WebSocketDisconnect:
+        logger.debug("WebSocket flow disconnected gracefully: project=%d", project_id)
+    except RuntimeError as e:
+        if "disconnect" in str(e).lower() or "closed" in str(e).lower():
+            logger.debug("WebSocket flow connection closed: project=%d", project_id)
+        else:
+            logger.error("WebSocket flow runtime error: %s", e)
+    except Exception as e:
+        logger.error("WebSocket flow error: %s", e)
+    finally:
+        await ws_manager.disconnect(websocket, project_id, "flow")

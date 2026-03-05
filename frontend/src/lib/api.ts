@@ -17,20 +17,15 @@ async function apiFetch<T>(
   return res.json();
 }
 
-// ─── Token Settings ───────────────────────────────────────
+// ─── Claude CLI Auth Status ──────────────────────────────
 export interface TokenStatus {
   configured: boolean;
+  valid?: boolean | null;
+  message?: string;
 }
 
 export function getTokenStatus(): Promise<TokenStatus> {
   return apiFetch<TokenStatus>("/api/settings/token/status");
-}
-
-export function saveToken(token: string): Promise<{ ok: boolean }> {
-  return apiFetch("/api/settings/token", {
-    method: "POST",
-    body: JSON.stringify({ token }),
-  });
 }
 
 // ─── Projects ─────────────────────────────────────────────
@@ -44,7 +39,9 @@ export interface Project {
 }
 
 export function getProjects(): Promise<Project[]> {
-  return apiFetch<Project[]>("/api/projects");
+  return apiFetch<{ projects: Project[]; total: number }>("/api/projects").then(
+    (res) => res.projects
+  );
 }
 
 export function createProject(data: {
@@ -53,7 +50,7 @@ export function createProject(data: {
 }): Promise<Project> {
   return apiFetch<Project>("/api/projects", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({ name: data.name, idea_text: data.idea }),
   });
 }
 
@@ -77,8 +74,34 @@ export interface ProjectCost {
   by_agent: AgentCost[];
 }
 
+interface RawProjectCost {
+  project_id: string;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: string;
+  agent_breakdown: Array<{
+    agent_id: string;
+    input_tokens: number;
+    output_tokens: number;
+    total_cost_usd?: string;
+  }>;
+}
+
 export function getProjectCost(projectId: string): Promise<ProjectCost> {
-  return apiFetch<ProjectCost>(`/api/projects/${projectId}/cost`);
+  return apiFetch<RawProjectCost>(`/api/projects/${projectId}/cost`).then(
+    (raw) => ({
+      project_id: raw.project_id,
+      total_input_tokens: raw.total_input_tokens,
+      total_output_tokens: raw.total_output_tokens,
+      total_cost: parseFloat(raw.total_cost_usd) || 0,
+      by_agent: (raw.agent_breakdown || []).map((a) => ({
+        agent_id: a.agent_id,
+        input_tokens: a.input_tokens,
+        output_tokens: a.output_tokens,
+        total_cost: parseFloat(a.total_cost_usd || "0") || 0,
+      })),
+    })
+  );
 }
 
 // ─── Planning Flow ────────────────────────────────────────
@@ -214,8 +237,40 @@ export interface ProjectFlow {
   edges: FlowEdge[];
 }
 
+interface RawFlowNode {
+  id: number;
+  label: string;
+  status: string;
+  node_type?: string;
+  parent_node_id?: number | null;
+  agent?: string;
+  retry_count?: number;
+  error_message?: string;
+}
+
 export function getProjectFlow(projectId: string): Promise<ProjectFlow> {
-  return apiFetch<ProjectFlow>(`/api/projects/${projectId}/flow`);
+  return apiFetch<{ nodes: RawFlowNode[] }>(`/api/projects/${projectId}/flow`).then(
+    (raw) => {
+      const nodes: FlowNode[] = raw.nodes.map((n) => ({
+        id: String(n.id),
+        label: n.label,
+        status: n.status as FlowNode["status"],
+        type: n.node_type,
+        parent_id: n.parent_node_id != null ? String(n.parent_node_id) : null,
+        agent: n.agent,
+        retry_count: n.retry_count,
+        error_message: n.error_message,
+      }));
+      const edges: FlowEdge[] = raw.nodes
+        .filter((n) => n.parent_node_id != null)
+        .map((n) => ({
+          id: `e${n.parent_node_id}-${n.id}`,
+          source: String(n.parent_node_id),
+          target: String(n.id),
+        }));
+      return { nodes, edges };
+    }
+  );
 }
 
 // ─── WebSocket URLs ───────────────────────────────────────

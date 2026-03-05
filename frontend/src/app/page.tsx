@@ -1,11 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Group,
-  Panel,
-  Separator,
-} from "react-resizable-panels";
 import ProjectListPanel from "@/components/ProjectListPanel";
 import DashboardPanel from "@/components/DashboardPanel";
 import ChatLogPanel from "@/components/ChatLogPanel";
@@ -18,7 +13,6 @@ import { toastWarning } from "@/store/toastStore";
 export default function Home() {
   const [showTokenModal, setShowTokenModal] = useState(false);
 
-  // Check token on mount
   useEffect(() => {
     getTokenStatus()
       .then((status) => {
@@ -27,7 +21,6 @@ export default function Home() {
         }
       })
       .catch(() => {
-        // API not reachable — show modal anyway for first-time setup
         setShowTokenModal(true);
         toastWarning("백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.");
       });
@@ -54,31 +47,28 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Network error banner */}
       <NetworkErrorBanner />
 
       {/* Main panels */}
-      <div className="flex-1 overflow-hidden">
-        <Group orientation="horizontal" className="h-full">
-          {/* Left Panel: Project List (20%) */}
-          <Panel id="left" defaultSize={20} minSize={15} maxSize={35}>
-            <ProjectListPanel />
-          </Panel>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel: Project List (20%) */}
+        <div className="h-full overflow-hidden" style={{ width: "20%", minWidth: "200px" }}>
+          <ProjectListPanel />
+        </div>
 
-          <Separator className="w-1 bg-gray-700 hover:bg-blue-500 transition-colors" />
+        <div className="w-1 shrink-0 bg-gray-700" />
 
-          {/* Center Panel: Dashboard (50%) */}
-          <Panel id="center" defaultSize={50} minSize={30}>
-            <DashboardPanel />
-          </Panel>
+        {/* Center Panel: Dashboard (50%) */}
+        <div className="h-full flex-1 overflow-hidden">
+          <DashboardPanel />
+        </div>
 
-          <Separator className="w-1 bg-gray-700 hover:bg-blue-500 transition-colors" />
+        <div className="w-1 shrink-0 bg-gray-700" />
 
-          {/* Right Panel: Chat + Log (30%) */}
-          <Panel id="right" defaultSize={30} minSize={20} maxSize={45}>
-            <ChatLogPanel />
-          </Panel>
-        </Group>
+        {/* Right Panel: Chat + Log (30%) */}
+        <div className="h-full overflow-hidden" style={{ width: "30%", minWidth: "250px" }}>
+          <ChatLogPanel />
+        </div>
       </div>
 
       <TokenModal

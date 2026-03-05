@@ -197,8 +197,10 @@ class AgentProcessManager:
             prompt,
         ]
 
-        if agent_md_path:
-            cmd.extend(["--agent-file", agent_md_path])
+        if agent_md_path and os.path.exists(agent_md_path):
+            with open(agent_md_path, "r", encoding="utf-8") as f:
+                agent_prompt = f.read()
+            cmd.extend(["--append-system-prompt", agent_prompt])
 
         # Spawn with pty
         master_fd, slave_fd = pty.openpty()

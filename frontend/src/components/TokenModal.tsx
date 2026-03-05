@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { saveToken } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { getTokenStatus } from "@/lib/api";
 import Spinner from "./Spinner";
-import { toastSuccess, toastError } from "@/store/toastStore";
 
 interface TokenModalProps {
   open: boolean;
@@ -11,61 +10,57 @@ interface TokenModalProps {
 }
 
 export default function TokenModal({ open, onClose }: TokenModalProps) {
-  const [token, setToken] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [status, setStatus] = useState<{
+    configured: boolean;
+    valid: boolean | null;
+    message?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setChecking(true);
+    getTokenStatus()
+      .then((s) => setStatus(s))
+      .catch(() => setStatus({ configured: false, valid: false, message: "Backend unreachable" }))
+      .finally(() => setChecking(false));
+  }, [open]);
 
   if (!open) return null;
 
-  const handleSave = async () => {
-    if (!token.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await saveToken(token.trim());
-      toastSuccess("API 토큰이 저장되었습니다.");
-      onClose();
-    } catch (e) {
-      const errMsg = (e as Error).message;
-      setError(errMsg);
-      toastError(`토큰 저장 실패: ${errMsg}`);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const isOk = status?.configured && status?.valid;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-md rounded-xl bg-gray-800 p-6 shadow-2xl">
-        <h2 className="text-xl font-bold text-white mb-2">API 토큰 설정</h2>
-        <p className="text-gray-400 text-sm mb-4">
-          Claude API 토큰을 입력하세요. 안전하게 암호화되어 저장됩니다.
-        </p>
-        <input
-          type="password"
-          placeholder="sk-ant-..."
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-2.5 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
-          onKeyDown={(e) => e.key === "Enter" && handleSave()}
-        />
-        {error && (
-          <p className="mt-2 text-sm text-red-400">{error}</p>
+        <h2 className="text-xl font-bold text-white mb-2">Claude CLI 상태</h2>
+
+        {checking ? (
+          <div className="flex items-center gap-3 py-4 text-gray-400">
+            <Spinner size="sm" />
+            <span>Claude CLI 인증 상태 확인 중...</span>
+          </div>
+        ) : isOk ? (
+          <div className="rounded-lg bg-green-900/30 border border-green-700 p-4 my-3">
+            <p className="text-green-400 font-medium">Claude CLI 인증됨</p>
+            <p className="text-green-300/70 text-sm mt-1">{status?.message}</p>
+          </div>
+        ) : (
+          <div className="rounded-lg bg-red-900/30 border border-red-700 p-4 my-3">
+            <p className="text-red-400 font-medium">Claude CLI 미인증</p>
+            <p className="text-red-300/70 text-sm mt-1">{status?.message}</p>
+            <p className="text-gray-400 text-sm mt-3">
+              터미널에서 <code className="bg-gray-700 px-1.5 py-0.5 rounded text-white">claude login</code> 을 실행하세요.
+            </p>
+          </div>
         )}
-        <div className="mt-4 flex justify-end gap-3">
+
+        <div className="mt-4 flex justify-end">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:text-white transition"
+            className="rounded-lg bg-gray-700 px-4 py-2 text-sm text-white hover:bg-gray-600 transition"
           >
-            나중에
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !token.trim()}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition"
-          >
-            {saving && <Spinner size="sm" />}
-            {saving ? "저장 중..." : "저장"}
+            닫기
           </button>
         </div>
       </div>
