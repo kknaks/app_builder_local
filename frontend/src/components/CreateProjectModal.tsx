@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
+import Spinner from "./Spinner";
+import { toastSuccess, toastError } from "@/store/toastStore";
 
 interface CreateProjectModalProps {
   open: boolean;
@@ -26,11 +28,14 @@ export default function CreateProjectModal({
     setError(null);
     try {
       await createProject(name.trim(), idea.trim());
+      toastSuccess(`"${name.trim()}" 프로젝트가 생성되었습니다.`);
       setName("");
       setIdea("");
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`프로젝트 생성 실패: ${errMsg}`);
     } finally {
       setSaving(false);
     }
@@ -77,8 +82,9 @@ export default function CreateProjectModal({
           <button
             onClick={handleCreate}
             disabled={saving || !name.trim() || !idea.trim()}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition"
           >
+            {saving && <Spinner size="sm" />}
             {saving ? "생성 중..." : "프로젝트 생성"}
           </button>
         </div>

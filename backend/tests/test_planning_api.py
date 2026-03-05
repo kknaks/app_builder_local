@@ -203,7 +203,7 @@ class TestPlanStartAPI:
 
         response = await client.post(f"/api/projects/{project_id}/plan")
         assert response.status_code == 400
-        assert "sprint_planning" in response.json()["detail"]
+        assert "sprint_planning" in response.json()["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_plan_start_not_found(self, client):

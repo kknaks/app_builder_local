@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { useProjectStore } from "@/store/projectStore";
 import { startSprint, startImplementation, cancelProject } from "@/lib/api";
+import Spinner from "./Spinner";
+import { toastInfo, toastError, toastWarning } from "@/store/toastStore";
 
 export type ImplPhase =
   | "idle"
@@ -34,8 +36,11 @@ export default function ImplementationActions({
     try {
       await startSprint(selectedId);
       onPhaseChange?.("sprint_planning");
+      toastInfo("스프린트 플랜을 작성합니다...");
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`스프린트 시작 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -48,8 +53,11 @@ export default function ImplementationActions({
     try {
       await startImplementation(selectedId);
       onPhaseChange?.("implementing");
+      toastInfo("구현을 시작합니다...");
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`구현 시작 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -61,8 +69,11 @@ export default function ImplementationActions({
     setError(null);
     try {
       await cancelProject(selectedId);
+      toastWarning("프로젝트 실행이 중단되었습니다.");
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`중단 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -93,7 +104,7 @@ export default function ImplementationActions({
           className="flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50 transition"
         >
           {loading && phase !== "sprint_planning" ? (
-            "시작중..."
+            <><Spinner size="sm" /> 시작중...</>
           ) : phase === "sprint_planning" ? (
             <>
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-violet-300" />
@@ -113,7 +124,7 @@ export default function ImplementationActions({
           className="flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-500 disabled:opacity-50 transition"
         >
           {loading && phase !== "implementing" ? (
-            "시작중..."
+            <><Spinner size="sm" /> 시작중...</>
           ) : phase === "implementing" ? (
             <>
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-orange-300" />

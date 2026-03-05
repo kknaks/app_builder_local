@@ -135,6 +135,31 @@ export function cancelTask(projectId: string, taskId: string): Promise<{ ok: boo
   });
 }
 
+// ─── App Run/Stop ─────────────────────────────────────────
+export interface RunStatus {
+  status: "idle" | "starting" | "running" | "stopping" | "stopped" | "error";
+  url?: string;
+  port?: number;
+  error?: string;
+  container_id?: string;
+}
+
+export function runProject(projectId: string): Promise<{ ok: boolean; url?: string }> {
+  return apiFetch<{ ok: boolean; url?: string }>(`/api/projects/${projectId}/run`, {
+    method: "POST",
+  });
+}
+
+export function stopProject(projectId: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/projects/${projectId}/stop`, {
+    method: "POST",
+  });
+}
+
+export function getRunStatus(projectId: string): Promise<RunStatus> {
+  return apiFetch<RunStatus>(`/api/projects/${projectId}/run/status`);
+}
+
 // ─── Flow Nodes ───────────────────────────────────────────
 export interface FlowNode {
   id: string;

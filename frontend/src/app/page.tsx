@@ -12,6 +12,7 @@ import ChatLogPanel from "@/components/ChatLogPanel";
 import TokenModal from "@/components/TokenModal";
 import CostTracker from "@/components/CostTracker";
 import { getTokenStatus } from "@/lib/api";
+import { toastWarning } from "@/store/toastStore";
 
 export default function Home() {
   const [showTokenModal, setShowTokenModal] = useState(false);
@@ -27,11 +28,12 @@ export default function Home() {
       .catch(() => {
         // API not reachable — show modal anyway for first-time setup
         setShowTokenModal(true);
+        toastWarning("백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.");
       });
   }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-gray-950">
+    <div className="flex h-screen min-w-[1024px] flex-col bg-gray-950">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-gray-800 px-4 py-2">
         <div className="flex items-center gap-3">

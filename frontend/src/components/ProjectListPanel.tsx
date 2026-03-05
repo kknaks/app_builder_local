@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
 import CreateProjectModal from "./CreateProjectModal";
+import EmptyState from "./EmptyState";
+import { ProjectListSkeleton } from "./LoadingSkeleton";
+import { toastError } from "@/store/toastStore";
 
 // Project status → overall icon
 const PROJECT_STATUS_ICONS: Record<string, string> = {
@@ -104,7 +107,9 @@ export default function ProjectListPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProjects();
+    fetchProjects().catch((e) => {
+      toastError(`프로젝트 목록 로드 실패: ${(e as Error).message}`);
+    });
   }, [fetchProjects]);
 
   return (
@@ -124,13 +129,17 @@ export default function ProjectListPanel() {
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
-        {loading && (
-          <p className="p-4 text-sm text-gray-500">로딩 중...</p>
-        )}
+        {loading && <ProjectListSkeleton />}
         {!loading && projects.length === 0 && (
-          <p className="p-4 text-sm text-gray-500">
-            프로젝트가 없습니다.
-          </p>
+          <EmptyState
+            icon="🚀"
+            title="프로젝트가 없습니다"
+            description="새 프로젝트를 만들어 AI 개발팀과 함께 앱을 만들어보세요."
+            action={{
+              label: "새 프로젝트 만들기",
+              onClick: () => setShowCreate(true),
+            }}
+          />
         )}
         {projects.map((project) => {
           const phaseStatuses = getPhaseStatuses(project.status);
@@ -178,7 +187,9 @@ export default function ProjectListPanel() {
                           `"${project.name}" 프로젝트를 삭제하시겠습니까?`
                         )
                       ) {
-                        deleteProject(project.id);
+                        deleteProject(project.id).catch((err) =>
+                          toastError(`삭제 실패: ${(err as Error).message}`)
+                        );
                       }
                     }}
                     className="ml-2 flex-shrink-0 rounded p-1 text-gray-500 hover:bg-red-900/30 hover:text-red-400 transition"

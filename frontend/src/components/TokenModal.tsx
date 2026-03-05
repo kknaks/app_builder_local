@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { saveToken } from "@/lib/api";
+import Spinner from "./Spinner";
+import { toastSuccess, toastError } from "@/store/toastStore";
 
 interface TokenModalProps {
   open: boolean;
@@ -21,9 +23,12 @@ export default function TokenModal({ open, onClose }: TokenModalProps) {
     setError(null);
     try {
       await saveToken(token.trim());
+      toastSuccess("API 토큰이 저장되었습니다.");
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`토큰 저장 실패: ${errMsg}`);
     } finally {
       setSaving(false);
     }
@@ -57,8 +62,9 @@ export default function TokenModal({ open, onClose }: TokenModalProps) {
           <button
             onClick={handleSave}
             disabled={saving || !token.trim()}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition"
           >
+            {saving && <Spinner size="sm" />}
             {saving ? "저장 중..." : "저장"}
           </button>
         </div>

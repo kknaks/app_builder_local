@@ -7,9 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.error_handlers import register_error_handlers
 from app.routers.agent_tasks import router as agent_tasks_router
 from app.routers.chat import router as chat_router
 from app.routers.cost import router as cost_router
+from app.routers.docker import router as docker_router
 from app.routers.flow_nodes import router as flow_nodes_router
 from app.routers.planning import router as planning_router
 from app.routers.projects import router as projects_router
@@ -50,6 +52,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG, lifespan=lifespan)
 
+# Register unified error handlers
+register_error_handlers(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -70,6 +75,7 @@ app.include_router(cost_router)
 app.include_router(planning_router)
 app.include_router(flow_nodes_router)
 app.include_router(sprint_router)
+app.include_router(docker_router)
 app.include_router(ws_router)
 
 

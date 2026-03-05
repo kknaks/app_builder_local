@@ -4,6 +4,8 @@ import { useState, useCallback } from "react";
 import { useProjectStore } from "@/store/projectStore";
 import { useFlowStore } from "@/store/flowStore";
 import { startPlanning, startReview } from "@/lib/api";
+import Spinner from "./Spinner";
+import { toastInfo, toastError } from "@/store/toastStore";
 
 type PlanPhase = "idle" | "planning" | "plan_complete" | "reviewing" | "review_complete" | "approved";
 
@@ -29,8 +31,11 @@ export default function PlanningActions({
       await startPlanning(selectedId);
       updateNodeStatus("plan-detail", "running");
       onPhaseChange?.("planning");
+      toastInfo("기획을 시작합니다...");
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`기획 시작 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -44,8 +49,11 @@ export default function PlanningActions({
       await startReview(selectedId);
       updateNodeStatus("plan-review", "running");
       onPhaseChange?.("reviewing");
+      toastInfo("기획 검토를 시작합니다...");
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`검토 시작 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -62,7 +70,7 @@ export default function PlanningActions({
           className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition"
         >
           {loading && phase !== "planning" ? (
-            "시작중..."
+            <><Spinner size="sm" /> 시작중...</>
           ) : phase === "planning" ? (
             <>
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-300" />
@@ -80,7 +88,7 @@ export default function PlanningActions({
           disabled={loading}
           className="flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 disabled:opacity-50 transition"
         >
-          {loading ? "시작중..." : "🔍 검토 시작"}
+          {loading ? <><Spinner size="sm" /> 시작중...</> : "🔍 검토 시작"}
         </button>
       )}
 

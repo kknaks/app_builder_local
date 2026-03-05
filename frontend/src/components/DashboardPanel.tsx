@@ -23,6 +23,8 @@ import {
   DEFAULT_PLANNING_EDGES,
 } from "@/store/flowStore";
 import { getProjectFlow } from "@/lib/api";
+import EmptyState from "./EmptyState";
+import { DashboardSkeleton } from "./LoadingSkeleton";
 
 // ─── Node status → color ──────────────────────────────────
 const STATUS_COLORS: Record<string, { bg: string; border: string; glow: string }> = {
@@ -250,13 +252,24 @@ export default function DashboardPanel() {
     // fitView is handled by ReactFlow prop
   }, []);
 
+  const flowLoading = useFlowStore((s) => s.loading);
+
   if (!selectedId || !project) {
     return (
-      <div className="flex h-full items-center justify-center bg-gray-950 text-gray-500">
-        <div className="text-center">
-          <p className="text-lg font-medium">대시보드</p>
-          <p className="mt-1 text-sm">프로젝트를 선택하세요</p>
-        </div>
+      <div className="h-full bg-gray-950">
+        <EmptyState
+          icon="📊"
+          title="대시보드"
+          description="좌측에서 프로젝트를 선택하면 플로우 그래프가 표시됩니다."
+        />
+      </div>
+    );
+  }
+
+  if (flowLoading && flowNodes.length === 0) {
+    return (
+      <div className="h-full bg-gray-950">
+        <DashboardSkeleton />
       </div>
     );
   }

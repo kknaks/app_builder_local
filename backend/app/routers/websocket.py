@@ -109,7 +109,13 @@ async def websocket_chat(
             )
 
     except WebSocketDisconnect:
-        pass
+        logger.debug("WebSocket chat disconnected gracefully: project=%d", project_id)
+    except RuntimeError as e:
+        # Handle "Unexpected ASGI message" when client disconnects mid-send
+        if "disconnect" in str(e).lower() or "closed" in str(e).lower():
+            logger.debug("WebSocket chat connection closed: project=%d", project_id)
+        else:
+            logger.error("WebSocket chat runtime error: %s", e)
     except Exception as e:
         logger.error("WebSocket chat error: %s", e)
     finally:
@@ -158,7 +164,12 @@ async def websocket_logs(
             )
 
     except WebSocketDisconnect:
-        pass
+        logger.debug("WebSocket logs disconnected gracefully: project=%d", project_id)
+    except RuntimeError as e:
+        if "disconnect" in str(e).lower() or "closed" in str(e).lower():
+            logger.debug("WebSocket logs connection closed: project=%d", project_id)
+        else:
+            logger.error("WebSocket logs runtime error: %s", e)
     except Exception as e:
         logger.error("WebSocket logs error: %s", e)
     finally:

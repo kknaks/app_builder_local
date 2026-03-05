@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { useProjectStore } from "@/store/projectStore";
 import { approvePlan, submitFeedback } from "@/lib/api";
+import Spinner from "./Spinner";
+import { toastSuccess, toastInfo, toastError } from "@/store/toastStore";
 
 interface ApprovalBarProps {
   /** Called after successful approval */
@@ -24,9 +26,12 @@ export default function ApprovalBar({ onApprove, onFeedback }: ApprovalBarProps)
     setError(null);
     try {
       await approvePlan(selectedId);
+      toastSuccess("기획이 승인되었습니다!");
       onApprove?.();
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`승인 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -38,11 +43,14 @@ export default function ApprovalBar({ onApprove, onFeedback }: ApprovalBarProps)
     setError(null);
     try {
       await submitFeedback(selectedId, feedbackText.trim());
+      toastInfo("피드백이 전달되었습니다.");
       setFeedbackText("");
       setShowFeedbackInput(false);
       onFeedback?.();
     } catch (e) {
-      setError((e as Error).message);
+      const errMsg = (e as Error).message;
+      setError(errMsg);
+      toastError(`피드백 전송 실패: ${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -71,7 +79,7 @@ export default function ApprovalBar({ onApprove, onFeedback }: ApprovalBarProps)
               disabled={loading}
               className="flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-50 transition"
             >
-              {loading ? "처리중..." : "✅ 승인"}
+              {loading ? <><Spinner size="sm" /> 처리중...</> : "✅ 승인"}
             </button>
           </div>
         )}

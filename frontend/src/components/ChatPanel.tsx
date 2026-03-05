@@ -15,6 +15,7 @@ import ImplementationActions, {
 } from "./ImplementationActions";
 import EscalationBar, { type Escalation } from "./EscalationBar";
 import ImplementationProgress from "./ImplementationProgress";
+import RunPanel from "./RunPanel";
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);
@@ -351,6 +352,9 @@ export default function ChatPanel() {
 
       {/* Implementation action bar (after planning approved) */}
       <ImplementationActions phase={implPhase} onPhaseChange={setImplPhase} />
+
+      {/* Run panel (after implementation completed) */}
+      <RunPanel visible={implPhase === "completed" || implPhase === "testing"} />
 
       {/* Approval bar (pinned at top when review is complete) */}
       {showApprovalBar && (
