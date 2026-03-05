@@ -35,6 +35,27 @@
 - 상시 연결 X — 필요할 때 spawn → 완료 → 종료
 - 병렬: BE/FE 동시 작업 가능한 경우만
 
+### 포트 설정 (고정)
+- **백엔드 (FastAPI):** `28888`
+- **프론트엔드 (Next.js):** `23000`
+- **PostgreSQL:** Docker 내부 `5432` (외부 노출 불필요)
+
+### 스프린트 완료 검증 (필수)
+**백엔드:**
+- `pytest` 전체 통과
+- `ruff check .` lint 통과
+- 새 기능 테스트 커버리지 확인
+
+**프론트엔드:**
+- `tsc --noEmit` 타입 에러 0
+- `next build` 빌드 성공
+
+**통합:**
+- API 연동 실제 동작 확인
+- `docker compose up` 정상 실행
+
+검증 실패 시 → 자동 수정 최대 3회 → 그래도 실패 시 케케낙 Discord DM 보고 후 대기
+
 ### 커밋 규칙
 - Conventional Commits
 - 스프린트 완료 시 반드시 push
