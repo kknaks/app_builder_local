@@ -4,20 +4,83 @@ import { useEffect, useState } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
 import CreateProjectModal from "./CreateProjectModal";
 
-const STATUS_ICONS: Record<string, string> = {
-  pending: "○",
-  running: "●",
-  completed: "✅",
+// Project status → overall icon
+const PROJECT_STATUS_ICONS: Record<string, string> = {
+  created: "○",
+  planning: "🔵",
+  plan_complete: "📝",
+  reviewing: "🔍",
+  review_complete: "📋",
+  approved: "✅",
+  implementing: "🔨",
+  completed: "🎉",
   failed: "❌",
 };
 
-const PHASE_LABELS = [
-  { key: "idea", label: "아이디어" },
-  { key: "planning", label: "기획" },
-  { key: "review", label: "검토" },
-  { key: "implementation", label: "구현" },
-  { key: "deploy", label: "배포" },
-];
+// Phase status icons
+const PHASE_STATUS: Record<
+  string,
+  { icon: string; color: string }
+> = {
+  pending: { icon: "○", color: "text-gray-500" },
+  active: { icon: "●", color: "text-blue-400" },
+  completed: { icon: "✅", color: "text-green-400" },
+  failed: { icon: "❌", color: "text-red-400" },
+};
+
+// Determine phase statuses based on project status
+function getPhaseStatuses(projectStatus: string) {
+  const phases = [
+    { key: "idea", label: "아이디어" },
+    { key: "planning", label: "기획 구체화" },
+    { key: "review", label: "기획 검토" },
+    { key: "approve", label: "승인" },
+    { key: "implementation", label: "구현" },
+    { key: "deploy", label: "배포" },
+  ];
+
+  const statusMap: Record<string, number> = {
+    created: 0,
+    planning: 1,
+    plan_complete: 2,
+    reviewing: 2,
+    review_complete: 3,
+    approved: 3,
+    implementing: 4,
+    completed: 5,
+    failed: -1,
+  };
+
+  const currentIdx = statusMap[projectStatus] ?? -1;
+
+  return phases.map((phase, idx) => {
+    let phaseStatus: "pending" | "active" | "completed" | "failed";
+
+    if (projectStatus === "failed") {
+      // Mark phases up to current as completed, current as failed
+      phaseStatus = idx <= currentIdx ? "completed" : "pending";
+      if (idx === currentIdx) phaseStatus = "failed";
+    } else if (idx < currentIdx) {
+      phaseStatus = "completed";
+    } else if (idx === currentIdx) {
+      // Active phase depends on project status
+      if (
+        projectStatus === "plan_complete" ||
+        projectStatus === "review_complete" ||
+        projectStatus === "approved" ||
+        projectStatus === "completed"
+      ) {
+        phaseStatus = "completed";
+      } else {
+        phaseStatus = "active";
+      }
+    } else {
+      phaseStatus = "pending";
+    }
+
+    return { ...phase, status: phaseStatus };
+  });
+}
 
 export default function ProjectListPanel() {
   const {
@@ -61,78 +124,101 @@ export default function ProjectListPanel() {
             프로젝트가 없습니다.
           </p>
         )}
-        {projects.map((project) => (
-          <div
-            key={project.id}
-            className={`border-b border-gray-800 ${
-              selectedId === project.id ? "bg-gray-800" : ""
-            }`}
-          >
-            {/* Project card */}
-            <div
-              className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-800/60 transition"
-              onClick={() => {
-                selectProject(project.id);
-                setExpandedId(
-                  expandedId === project.id ? null : project.id
-                );
-              }}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">
-                    {STATUS_ICONS[project.status] || "○"}
-                  </span>
-                  <span className="truncate text-sm font-medium">
-                    {project.name}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-gray-500">
-                  {project.idea}
-                </p>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm(`"${project.name}" 프로젝트를 삭제하시겠습니까?`)) {
-                    deleteProject(project.id);
-                  }
-                }}
-                className="ml-2 flex-shrink-0 rounded p-1 text-gray-500 hover:bg-red-900/30 hover:text-red-400 transition"
-                title="삭제"
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-              </button>
-            </div>
+        {projects.map((project) => {
+          const phaseStatuses = getPhaseStatuses(project.status);
+          const statusIcon =
+            PROJECT_STATUS_ICONS[project.status] || "○";
 
-            {/* Phase tree (expanded) */}
-            {expandedId === project.id && (
-              <div className="pb-2 pl-8 pr-4">
-                {PHASE_LABELS.map((phase) => (
-                  <div
-                    key={phase.key}
-                    className="flex items-center gap-2 py-1 text-xs text-gray-400"
-                  >
-                    <span>{STATUS_ICONS.pending}</span>
-                    <span>{phase.label}</span>
+          return (
+            <div
+              key={project.id}
+              className={`border-b border-gray-800 ${
+                selectedId === project.id ? "bg-gray-800" : ""
+              }`}
+            >
+              {/* Project card */}
+              <div
+                className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-800/60 transition"
+                onClick={() => {
+                  selectProject(project.id);
+                  setExpandedId(
+                    expandedId === project.id ? null : project.id
+                  );
+                }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs">{statusIcon}</span>
+                    <span className="truncate text-sm font-medium">
+                      {project.name}
+                    </span>
                   </div>
-                ))}
+                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                    {project.idea}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {/* Expand indicator */}
+                  <span className="text-xs text-gray-600">
+                    {expandedId === project.id ? "▾" : "▸"}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (
+                        confirm(
+                          `"${project.name}" 프로젝트를 삭제하시겠습니까?`
+                        )
+                      ) {
+                        deleteProject(project.id);
+                      }
+                    }}
+                    className="ml-2 flex-shrink-0 rounded p-1 text-gray-500 hover:bg-red-900/30 hover:text-red-400 transition"
+                    title="삭제"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+
+              {/* Phase tree (expanded) */}
+              {expandedId === project.id && (
+                <div className="pb-2 pl-8 pr-4">
+                  {phaseStatuses.map((phase) => {
+                    const cfg = PHASE_STATUS[phase.status];
+                    const isActive = phase.status === "active";
+                    return (
+                      <div
+                        key={phase.key}
+                        className={`flex items-center gap-2 py-1 text-xs ${cfg.color} ${
+                          isActive ? "font-medium" : ""
+                        }`}
+                      >
+                        <span>{cfg.icon}</span>
+                        <span>{phase.label}</span>
+                        {isActive && (
+                          <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <CreateProjectModal

@@ -81,6 +81,59 @@ export function getProjectCost(projectId: string): Promise<ProjectCost> {
   return apiFetch<ProjectCost>(`/api/projects/${projectId}/cost`);
 }
 
+// ─── Planning Flow ────────────────────────────────────────
+export function startPlanning(projectId: string): Promise<{ task_id: string }> {
+  return apiFetch<{ task_id: string }>(`/api/projects/${projectId}/plan`, {
+    method: "POST",
+  });
+}
+
+export function startReview(projectId: string): Promise<{ task_id: string }> {
+  return apiFetch<{ task_id: string }>(`/api/projects/${projectId}/review`, {
+    method: "POST",
+  });
+}
+
+export function approvePlan(projectId: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/projects/${projectId}/approve`, {
+    method: "POST",
+  });
+}
+
+export function submitFeedback(
+  projectId: string,
+  feedback: string
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/projects/${projectId}/feedback`, {
+    method: "POST",
+    body: JSON.stringify({ feedback }),
+  });
+}
+
+// ─── Flow Nodes ───────────────────────────────────────────
+export interface FlowNode {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "completed" | "failed";
+  type?: string;
+  parent_id?: string | null;
+}
+
+export interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface ProjectFlow {
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}
+
+export function getProjectFlow(projectId: string): Promise<ProjectFlow> {
+  return apiFetch<ProjectFlow>(`/api/projects/${projectId}/flow`);
+}
+
 // ─── WebSocket URLs ───────────────────────────────────────
 const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || "ws://localhost:28888";
 

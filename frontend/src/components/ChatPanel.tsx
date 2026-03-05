@@ -4,8 +4,12 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useAgentStore, type AgentId } from "@/store/agentStore";
 import { useChatStore, type ChatMessage } from "@/store/chatStore";
 import { useProjectStore } from "@/store/projectStore";
+import { useFlowStore } from "@/store/flowStore";
 import { useWebSocket, type WSStatus } from "@/hooks/useWebSocket";
 import { getChatWsUrl } from "@/lib/api";
+import ReviewCard, { type ReviewResult } from "./ReviewCard";
+import ApprovalBar from "./ApprovalBar";
+import PlanningActions, { type PlanPhase } from "./PlanningActions";
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);
@@ -33,20 +37,52 @@ function ConnectionBadge({ status }: { status: WSStatus }) {
 
 export default function ChatPanel() {
   const selectedId = useProjectStore((s) => s.selectedId);
+  const project = useProjectStore((s) =>
+    s.projects.find((p) => p.id === s.selectedId)
+  );
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const addMessage = useChatStore((s) => s.addMessage);
   const setMessages = useChatStore((s) => s.setMessages);
   const saveScrollPosition = useChatStore((s) => s.saveScrollPosition);
   const messages = useChatStore((s) => s.chats[activeAgentId].messages);
-  const savedScrollPosition = useChatStore((s) => s.chats[activeAgentId].scrollPosition);
+  const savedScrollPosition = useChatStore(
+    (s) => s.chats[activeAgentId].scrollPosition
+  );
   const incrementUnread = useAgentStore((s) => s.incrementUnread);
   const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
+  const updateNodeStatus = useFlowStore((s) => s.updateNodeStatus);
 
   const [input, setInput] = useState("");
+  const [planPhase, setPlanPhase] = useState<PlanPhase>("idle");
+  const [reviewResults, setReviewResults] = useState<ReviewResult[]>([]);
+  const [showApprovalBar, setShowApprovalBar] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const previousAgentRef = useRef<AgentId>(activeAgentId);
   const isInitialLoadRef = useRef(true);
+
+  // Derive planning phase from project status
+  useEffect(() => {
+    if (!project) {
+      setPlanPhase("idle");
+      setShowApprovalBar(false);
+      setReviewResults([]);
+      return;
+    }
+    const status = project.status;
+    if (status === "planning") setPlanPhase("planning");
+    else if (status === "plan_complete") setPlanPhase("plan_complete");
+    else if (status === "reviewing") setPlanPhase("reviewing");
+    else if (status === "review_complete") {
+      setPlanPhase("review_complete");
+      setShowApprovalBar(true);
+    } else if (status === "approved") {
+      setPlanPhase("approved");
+      setShowApprovalBar(false);
+    } else {
+      setPlanPhase("idle");
+    }
+  }, [project]);
 
   // WebSocket URL
   const wsUrl = selectedId ? getChatWsUrl(selectedId) : null;
@@ -62,14 +98,16 @@ export default function ChatPanel() {
         content?: string;
         timestamp?: string;
         status?: string;
+        phase?: string;
+        reviews?: ReviewResult[];
+        node_id?: string;
+        node_status?: string;
       };
 
       if (msg.type === "history" && msg.messages) {
-        // History load on connection
         const agentId = (msg.agent_id || activeAgentId) as AgentId;
         setMessages(agentId, msg.messages);
       } else if (msg.type === "message" && msg.content) {
-        // New message from agent
         const agentId = (msg.agent_id || activeAgentId) as AgentId;
         const chatMessage: ChatMessage = {
           id: msg.id || crypto.randomUUID(),
@@ -85,16 +123,43 @@ export default function ChatPanel() {
           msg.agent_id as AgentId,
           msg.status as "active" | "idle" | "error"
         );
+      } else if (msg.type === "phase_update" && msg.phase) {
+        // Planning phase updates from server
+        const phase = msg.phase as PlanPhase;
+        setPlanPhase(phase);
+        if (phase === "review_complete") {
+          setShowApprovalBar(true);
+        }
+        if (phase === "approved") {
+          setShowApprovalBar(false);
+        }
+      } else if (msg.type === "review_results" && msg.reviews) {
+        // Review results from agents
+        setReviewResults(msg.reviews);
+        setShowApprovalBar(true);
+        setPlanPhase("review_complete");
+      } else if (msg.type === "flow_update" && msg.node_id && msg.node_status) {
+        // Flow node status update
+        updateNodeStatus(
+          msg.node_id,
+          msg.node_status as "pending" | "running" | "completed" | "failed"
+        );
       }
     },
-    [activeAgentId, addMessage, setMessages, incrementUnread, setAgentStatus]
+    [
+      activeAgentId,
+      addMessage,
+      setMessages,
+      incrementUnread,
+      setAgentStatus,
+      updateNodeStatus,
+    ]
   );
 
   const { sendMessage, status } = useWebSocket({
     url: wsUrl,
     onMessage: handleMessage,
     onOpen: () => {
-      // Request history for active agent on connect
       sendMessage({
         type: "switch_agent",
         agent_id: activeAgentId,
@@ -165,6 +230,20 @@ export default function ChatPanel() {
     }
   };
 
+  const handleApprove = () => {
+    setShowApprovalBar(false);
+    setPlanPhase("approved");
+    updateNodeStatus("plan-approve", "completed");
+    setReviewResults([]);
+  };
+
+  const handleFeedback = () => {
+    setShowApprovalBar(false);
+    setPlanPhase("planning");
+    updateNodeStatus("plan-review", "pending");
+    updateNodeStatus("plan-detail", "running");
+  };
+
   if (!selectedId) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -175,6 +254,14 @@ export default function ChatPanel() {
 
   return (
     <div className="flex flex-1 flex-col">
+      {/* Planning action bar */}
+      <PlanningActions phase={planPhase} onPhaseChange={setPlanPhase} />
+
+      {/* Approval bar (pinned at top when review is complete) */}
+      {showApprovalBar && (
+        <ApprovalBar onApprove={handleApprove} onFeedback={handleFeedback} />
+      )}
+
       {/* Connection status */}
       <div className="flex items-center justify-end px-3 py-1">
         <ConnectionBadge status={status} />
@@ -185,7 +272,19 @@ export default function ChatPanel() {
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-2 space-y-3"
       >
-        {messages.length === 0 ? (
+        {/* Review results cards */}
+        {reviewResults.length > 0 && (
+          <div className="space-y-2 pb-3">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide">
+              📋 검토 결과
+            </h4>
+            {reviewResults.map((review) => (
+              <ReviewCard key={review.agent_id} review={review} />
+            ))}
+          </div>
+        )}
+
+        {messages.length === 0 && reviewResults.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-600">
             {activeAgentId.toUpperCase()} 에이전트와 대화를 시작하세요
           </p>
@@ -211,7 +310,9 @@ export default function ChatPanel() {
                     [{msg.agentId.toUpperCase()}]
                   </span>
                 )}
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                <p className="whitespace-pre-wrap break-words">
+                  {msg.content}
+                </p>
                 <span className="mt-1 block text-right text-[10px] opacity-50">
                   {formatTime(msg.timestamp)}
                 </span>
