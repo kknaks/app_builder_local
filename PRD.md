@@ -42,6 +42,8 @@ App Builder Local은:
 | 패널 리사이즈 | react-resizable-panels | 목록/대시보드/채팅 3패널 리사이즈 |
 | 로그 가상 스크롤 | react-window | 대량 로그 메시지 렌더링 성능 최적화 |
 | 백엔드 | Python (FastAPI) | 오케스트레이터 + API 서버 |
+| 패키지 관리 | Poetry | 의존성 관리 + 가상환경 |
+| ORM | SQLAlchemy 2.0 | 비동기 (async) + Alembic 마이그레이션 |
 | DB | PostgreSQL | 프로젝트/에이전트/실행 이력 관리 |
 | AI 에이전트 | Claude Code CLI | `claude --dangerously-skip-permissions` (pty spawn) |
 | 실시간 통신 | WebSocket | 빌드 로그 + 채팅 실시간 스트리밍 |
@@ -545,7 +547,47 @@ root/kknaks_pr/
 
 ## 9. 데이터 모델
 
-### projects
+### ERD
+
+```
+projects (1) ──→ (N) agent_logs
+    │
+    ├──→ (N) flow_nodes ──→ (self) parent_node_id
+    │
+    ├──→ (N) chat_messages
+    │
+    └──→ (N) agent_tasks
+
+settings (독립)
+```
+
+### ORM 구성
+
+- **SQLAlchemy 2.0** (async mode) + **asyncpg** 드라이버
+- **Alembic** 마이그레이션 (autogenerate 활용)
+- 모델 위치: `backend/models/`
+- DB 세션: `backend/core/database.py` (async session factory)
+
+```
+backend/
+├── models/
+│   ├── __init__.py
+│   ├── base.py          # DeclarativeBase + 공통 mixin (id, created_at, updated_at)
+│   ├── project.py       # Project
+│   ├── agent_log.py     # AgentLog
+│   ├── flow_node.py     # FlowNode
+│   ├── chat_message.py  # ChatMessage
+│   ├── agent_task.py    # AgentTask
+│   └── setting.py       # Setting
+├── core/
+│   └── database.py      # async engine + session
+└── alembic/
+    └── versions/        # 마이그레이션 파일
+```
+
+### 테이블 정의
+
+#### projects
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -560,7 +602,7 @@ root/kknaks_pr/
 
 **status 값:** `created` → `planning` → `reviewing` → `sprint_planning` → `implementing` → `testing` → `completed` / `failed`
 
-### agent_logs
+#### agent_logs
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -572,7 +614,7 @@ root/kknaks_pr/
 | log_type | VARCHAR(10) DEFAULT 'info' | `info` / `error` / `success` / `question` |
 | created_at | TIMESTAMP DEFAULT NOW() | |
 
-### flow_nodes
+#### flow_nodes
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -587,7 +629,7 @@ root/kknaks_pr/
 | created_at | TIMESTAMP DEFAULT NOW() | |
 | updated_at | TIMESTAMP DEFAULT NOW() | |
 
-### chat_messages
+#### chat_messages
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -600,7 +642,7 @@ root/kknaks_pr/
 
 > 에이전트별로 대화 히스토리 분리. 에이전트 버튼 전환 시 해당 agent의 메시지만 조회.
 
-### agent_tasks
+#### agent_tasks
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -616,7 +658,7 @@ root/kknaks_pr/
 
 **status 값:** `pending` → `running` → `completed` / `failed`
 
-### settings
+#### settings
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
