@@ -1,13 +1,51 @@
 """App Builder Local — FastAPI Application."""
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.routers.agent_tasks import router as agent_tasks_router
+from app.routers.chat import router as chat_router
+from app.routers.cost import router as cost_router
 from app.routers.projects import router as projects_router
 from app.routers.settings import router as settings_router
+from app.routers.websocket import router as ws_router
 
-app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown hooks."""
+    # Startup: cleanup stale tasks
+    try:
+        from app.database.session import async_session
+        from app.services.agent_task_service import cleanup_stale_tasks
+
+        async with async_session() as db:
+            cleaned = await cleanup_stale_tasks(db)
+            if cleaned:
+                logger.info("Startup: cleaned %d stale tasks", cleaned)
+    except Exception as e:
+        logger.warning("Startup cleanup skipped: %s", e)
+
+    yield
+
+    # Shutdown: terminate all running agent processes
+    try:
+        from app.core.agent_runner import process_manager
+
+        count = await process_manager.cleanup_all()
+        if count:
+            logger.info("Shutdown: terminated %d agent processes", count)
+    except Exception as e:
+        logger.warning("Shutdown cleanup error: %s", e)
+
+
+app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +61,10 @@ app.add_middleware(
 # Register routers
 app.include_router(settings_router)
 app.include_router(projects_router)
+app.include_router(agent_tasks_router)
+app.include_router(chat_router)
+app.include_router(cost_router)
+app.include_router(ws_router)
 
 
 @app.get("/health")
