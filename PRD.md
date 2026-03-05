@@ -50,8 +50,10 @@ App Builder Local은:
 | 앱 실행 | Docker Compose | 생성된 앱 로컬 실행 |
 
 ### 생성되는 앱의 스택
-- MVP: 고정 스택 (추후 결정)
+- MVP: 고정 스택 (**에이전트 skills 파일이 스택에 의존하므로 MVP 착수 전 확정 필수**)
 - Phase 2: 사용자 선택 가능 (멀티 스택 지원)
+
+> ⚠️ **TODO:** MVP 고정 스택 확정 필요. 예: FastAPI + Next.js / Django + React 등. skills 파일 작성에 선행되어야 함.
 
 ---
 
@@ -452,7 +454,14 @@ PM이 Backend Agent에게 작업 지시
 #### Python 구현
 
 ```python
-import subprocess, pty, os, select, asyncio
+import subprocess, pty, os, select, asyncio, re
+
+# ANSI escape code 제거 정규식
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[@-~]")
+
+def strip_ansi(text: str) -> str:
+    """pty 출력에서 ANSI escape code, 스피너, 컬러 코드 제거"""
+    return ANSI_ESCAPE.sub("", text)
 
 async def spawn_agent(agent: str, prompt: str, project_dir: str, task_id: int):
     """에이전트 프로세스 spawn → 작업 완료 → 종료"""
@@ -468,11 +477,13 @@ async def spawn_agent(agent: str, prompt: str, project_dir: str, task_id: int):
     )
     os.close(slave)
 
-    # 3. 실시간 로그 → WebSocket
+    # 3. 실시간 로그 → WebSocket (ANSI 제거 후 전송)
     while proc.poll() is None:
         if select.select([master], [], [], 0.1)[0]:
-            chunk = os.read(master, 1024).decode("utf-8", errors="replace")
-            await websocket.send_text(chunk)
+            raw = os.read(master, 1024).decode("utf-8", errors="replace")
+            clean = strip_ansi(raw)
+            if clean.strip():  # 빈 문자열 전송 방지
+                await websocket.send_text(clean)
         await asyncio.sleep(0)  # 이벤트 루프 양보
 
     # 4. 완료 → 프로세스 종료 + 상태 업데이트
@@ -488,6 +499,23 @@ async def parallel_review(project_dir: str, tasks: list):
         for t in tasks
     ])
 ```
+
+#### 에러 복구 & 타임아웃
+
+에이전트 프로세스 크래시/행 방지를 위한 안전장치:
+
+- **태스크 타임아웃**: 기본 10분. 초과 시 프로세스 강제 종료 + `agent_tasks.status = "failed"`
+- **좀비 프로세스 정리**: 서버 시작 시 `status = "running"` 상태인 태스크를 `"failed"`로 일괄 업데이트
+- **자동 재시도**: 실패 시 최대 1회 재시도 (무한 루프 방지). `agent_tasks.retry_count` 컬럼으로 추적
+- **Graceful shutdown**: 서버 종료 시 실행 중 프로세스에 SIGTERM → 5초 대기 → SIGKILL
+
+#### 태스크 취소
+
+유저가 실행 중 작업을 중단할 수 있어야 한다:
+
+- `POST /api/projects/{id}/cancel` — 실행 중인 모든 에이전트 프로세스 종료
+- `POST /api/projects/{id}/tasks/{task_id}/cancel` — 특정 태스크만 취소
+- 취소 시: 프로세스 SIGTERM → `agent_tasks.status = "cancelled"` → WebSocket으로 `task_update` 전송
 
 ### 7.4 에이전트 간 통신
 
@@ -556,7 +584,9 @@ projects (1) ──→ (N) agent_logs
     │
     ├──→ (N) chat_messages
     │
-    └──→ (N) agent_tasks
+    ├──→ (N) agent_tasks ──→ (N) token_usage
+    │
+    └──→ (N) token_usage
 
 settings (독립)
 ```
@@ -578,6 +608,7 @@ backend/
 │   ├── flow_node.py     # FlowNode
 │   ├── chat_message.py  # ChatMessage
 │   ├── agent_task.py    # AgentTask
+│   ├── token_usage.py   # TokenUsage
 │   └── setting.py       # Setting
 ├── core/
 │   └── database.py      # async engine + session
@@ -652,11 +683,28 @@ backend/
 | command | TEXT NOT NULL | PM이 내린 명령 내용 |
 | status | VARCHAR(20) NOT NULL DEFAULT 'pending' | 상태 |
 | result_summary | TEXT | 작업 결과 요약 |
+| retry_count | INT NOT NULL DEFAULT 0 | 재시도 횟수 (최대 1) |
+| timeout_seconds | INT NOT NULL DEFAULT 600 | 타임아웃 (기본 10분) |
 | started_at | TIMESTAMP | 실행 시작 시간 |
 | completed_at | TIMESTAMP | 완료 시간 |
 | created_at | TIMESTAMP DEFAULT NOW() | |
 
-**status 값:** `pending` → `running` → `completed` / `failed`
+**status 값:** `pending` → `running` → `completed` / `failed` / `cancelled`
+
+#### token_usage
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | |
+| project_id | INT FK → projects.id | 프로젝트 |
+| agent_task_id | INT FK → agent_tasks.id NULL | 연관 태스크 (없을 수 있음) |
+| agent | VARCHAR(20) NOT NULL | 에이전트 |
+| input_tokens | INT NOT NULL DEFAULT 0 | 입력 토큰 수 |
+| output_tokens | INT NOT NULL DEFAULT 0 | 출력 토큰 수 |
+| estimated_cost_usd | DECIMAL(10,4) | 추정 비용 (USD) |
+| created_at | TIMESTAMP DEFAULT NOW() | |
+
+> 프로젝트별/에이전트별 비용 추적. Claude Code CLI stdout에서 토큰 사용량 파싱하여 기록.
 
 #### settings
 
@@ -688,6 +736,9 @@ backend/
 | POST | `/api/projects/{id}/implement` | 구현 시작 |
 | POST | `/api/projects/{id}/run` | Docker Compose 실행 |
 | POST | `/api/projects/{id}/stop` | Docker Compose 중지 |
+| POST | `/api/projects/{id}/cancel` | 실행 중인 모든 에이전트 프로세스 종료 |
+| POST | `/api/projects/{id}/tasks/{task_id}/cancel` | 특정 태스크만 취소 |
+| GET | `/api/projects/{id}/cost` | 프로젝트 토큰 사용량 + 추정 비용 조회 |
 | GET | `/api/projects/{id}/flow` | 대시보드 플로우 노드 조회 |
 | GET | `/api/projects/{id}/agents` | 에이전트 상태 조회 |
 | WS | `/ws/projects/{id}/chat` | 유저 ↔ 에이전트 실시간 채팅 |
