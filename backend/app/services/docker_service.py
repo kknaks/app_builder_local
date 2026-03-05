@@ -151,7 +151,6 @@ def generate_docker_compose(
 
     # Backend service (FastAPI)
     if structure["has_backend"] and backend_port:
-        backend_dockerfile = _generate_backend_dockerfile(path)
         compose["services"]["backend"] = {
             "build": {
                 "context": "./backend",
@@ -172,7 +171,7 @@ def generate_docker_compose(
 
     # Frontend service (Next.js)
     if structure["has_frontend"] and frontend_port:
-        api_url = f"http://backend:8000" if structure["has_backend"] else ""
+        api_url = "http://backend:8000" if structure["has_backend"] else ""
         compose["services"]["frontend"] = {
             "build": {
                 "context": "./frontend",

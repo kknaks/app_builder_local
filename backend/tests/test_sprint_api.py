@@ -117,7 +117,7 @@ class TestSprintPlanAPI:
 
         response = await client.post(f"/api/projects/{project_id}/sprint")
         assert response.status_code == 400
-        assert "created" in response.json()["detail"]
+        assert "created" in response.json()["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_sprint_not_found(self, client):
@@ -283,7 +283,7 @@ class TestImplementAPI:
 
         response = await client.post(f"/api/projects/{project_id}/implement")
         assert response.status_code == 400
-        assert "created" in response.json()["detail"]
+        assert "created" in response.json()["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_implement_not_found(self, client):
