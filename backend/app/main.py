@@ -14,6 +14,7 @@ from app.routers.flow_nodes import router as flow_nodes_router
 from app.routers.planning import router as planning_router
 from app.routers.projects import router as projects_router
 from app.routers.settings import router as settings_router
+from app.routers.sprint import router as sprint_router
 from app.routers.websocket import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ app.include_router(chat_router)
 app.include_router(cost_router)
 app.include_router(planning_router)
 app.include_router(flow_nodes_router)
+app.include_router(sprint_router)
 app.include_router(ws_router)
 
 
