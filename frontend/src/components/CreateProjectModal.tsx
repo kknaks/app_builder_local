@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useProjectStore } from "@/stores/useProjectStore";
+import { useProjectStore } from "@/store/projectStore";
 import Spinner from "./Spinner";
 import { toastSuccess, toastError } from "@/store/toastStore";
 

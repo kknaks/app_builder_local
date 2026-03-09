@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTokenStatus } from "@/lib/api";
+import { getTokenStatus, type TokenStatus } from "@/lib/api";
 import Spinner from "./Spinner";
 
 interface TokenModalProps {
@@ -11,11 +11,7 @@ interface TokenModalProps {
 
 export default function TokenModal({ open, onClose }: TokenModalProps) {
   const [checking, setChecking] = useState(true);
-  const [status, setStatus] = useState<{
-    configured: boolean;
-    valid: boolean | null;
-    message?: string;
-  } | null>(null);
+  const [status, setStatus] = useState<TokenStatus | null>(null);
 
   useEffect(() => {
     if (!open) return;

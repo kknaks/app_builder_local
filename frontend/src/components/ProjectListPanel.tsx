@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useProjectStore } from "@/stores/useProjectStore";
+import { useProjectStore } from "@/store/projectStore";
 import type { Project } from "@/lib/api";
 import CreateProjectModal from "./CreateProjectModal";
 import ConfirmDialog from "./ConfirmDialog";

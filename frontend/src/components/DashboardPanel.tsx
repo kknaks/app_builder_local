@@ -16,7 +16,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
-import { useProjectStore } from "@/stores/useProjectStore";
+import { useProjectStore } from "@/store/projectStore";
 import {
   useFlowStore,
   DEFAULT_PLANNING_NODES,
