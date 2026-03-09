@@ -217,6 +217,10 @@ class AgentProcessManager:
             os.close(master_fd)
             os.setsid()
 
+            # Remove CLAUDECODE env var to avoid nested session detection
+            os.environ.pop("CLAUDECODE", None)
+            os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+
             # Redirect stdio to pty
             os.dup2(slave_fd, 0)
             os.dup2(slave_fd, 1)

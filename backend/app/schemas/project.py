@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class ProjectCreateRequest(BaseModel):
@@ -25,6 +25,11 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def idea(self) -> str:
+        return self.idea_text
 
 
 class ProjectListResponse(BaseModel):
